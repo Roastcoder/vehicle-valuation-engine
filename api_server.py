@@ -6,9 +6,11 @@ Deploy as a REST API service
 from flask import Flask, request, jsonify, render_template
 from vehicle_valuation import calculate_resale_value
 from rc_api_integration import get_vehicle_valuation_from_rc
+from database import ValuationDB
 import os
 
 app = Flask(__name__)
+db = ValuationDB()
 
 # Load API tokens from environment variables
 SUREPASS_API_TOKEN = os.getenv('SUREPASS_API_TOKEN', '')
@@ -321,6 +323,14 @@ def idv_with_gemini():
             surepass_token=surepass_token,
             gemini_api_key=gemini_key
         )
+        
+        # Save to database if successful
+        if result.get('success') and result.get('idv_calculation'):
+            db.save_valuation(
+                rc_number=data['rc_number'],
+                rc_details=result['rc_details'],
+                idv_calculation=result['idv_calculation']
+            )
         
         return jsonify(result)
         

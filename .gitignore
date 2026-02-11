@@ -13,3 +13,5 @@ ENV/
 *.pyc
 .idea/
 .vscode/
+valuations.db
+valuations.db-journal
