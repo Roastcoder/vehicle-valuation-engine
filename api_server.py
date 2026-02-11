@@ -8,6 +8,7 @@ from vehicle_valuation import calculate_resale_value
 from rc_api_integration import get_vehicle_valuation_from_rc
 from database import ValuationDB
 import os
+import json
 
 app = Flask(__name__)
 db = ValuationDB()
