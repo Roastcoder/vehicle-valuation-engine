@@ -34,65 +34,63 @@ class ValuationDB:
             try:
                 conn = mysql.connector.connect(**self.db_config)
                 cursor = conn.cursor()
+                
+                # Valuations table
+                cursor.execute('''
+                    CREATE TABLE IF NOT EXISTS valuations (
+                        id INT AUTO_INCREMENT PRIMARY KEY,
+                        rc_number VARCHAR(20) NOT NULL,
+                        vehicle_make VARCHAR(100),
+                        vehicle_model VARCHAR(100),
+                        manufacturing_year VARCHAR(10),
+                        vehicle_age VARCHAR(50),
+                        fuel_type VARCHAR(20),
+                        owner_count INT,
+                        city VARCHAR(100),
+                        fair_market_retail_value DECIMAL(12,2),
+                        dealer_purchase_price DECIMAL(12,2),
+                        current_ex_showroom DECIMAL(12,2),
+                        estimated_odometer INT,
+                        base_depreciation_percent DECIMAL(5,2),
+                        book_value DECIMAL(12,2),
+                        market_listings_mean DECIMAL(12,2),
+                        confidence_score DECIMAL(5,2),
+                        ai_model VARCHAR(50),
+                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                        raw_response TEXT,
+                        INDEX idx_rc_number (rc_number),
+                        INDEX idx_created_at (created_at)
+                    )
+                ''')
+                
+                # RC Details table
+                cursor.execute('''
+                    CREATE TABLE IF NOT EXISTS rc_details (
+                        id INT AUTO_INCREMENT PRIMARY KEY,
+                        rc_number VARCHAR(20) UNIQUE NOT NULL,
+                        owner_name VARCHAR(200),
+                        maker_description VARCHAR(200),
+                        maker_model VARCHAR(100),
+                        registration_date VARCHAR(20),
+                        manufacturing_date VARCHAR(20),
+                        fuel_type VARCHAR(20),
+                        color VARCHAR(50),
+                        body_type VARCHAR(50),
+                        cubic_capacity VARCHAR(20),
+                        norms_type VARCHAR(20),
+                        registered_at VARCHAR(200),
+                        vehicle_category VARCHAR(100),
+                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                        raw_data TEXT
+                    )
+                ''')
             except Exception as e:
                 print(f"MySQL connection failed: {e}. Falling back to SQLite.")
                 self.use_mysql = False
-                import sqlite3
-                self.db_path = 'valuations.db'
-                conn = sqlite3.connect(self.db_path)
-                cursor = conn.cursor()
-            
-            # Valuations table
-            cursor.execute('''
-                CREATE TABLE IF NOT EXISTS valuations (
-                    id INT AUTO_INCREMENT PRIMARY KEY,
-                    rc_number VARCHAR(20) NOT NULL,
-                    vehicle_make VARCHAR(100),
-                    vehicle_model VARCHAR(100),
-                    manufacturing_year VARCHAR(10),
-                    vehicle_age VARCHAR(50),
-                    fuel_type VARCHAR(20),
-                    owner_count INT,
-                    city VARCHAR(100),
-                    fair_market_retail_value DECIMAL(12,2),
-                    dealer_purchase_price DECIMAL(12,2),
-                    current_ex_showroom DECIMAL(12,2),
-                    estimated_odometer INT,
-                    base_depreciation_percent DECIMAL(5,2),
-                    book_value DECIMAL(12,2),
-                    market_listings_mean DECIMAL(12,2),
-                    confidence_score DECIMAL(5,2),
-                    ai_model VARCHAR(50),
-                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                    raw_response TEXT,
-                    INDEX idx_rc_number (rc_number),
-                    INDEX idx_created_at (created_at)
-                )
-            ''')
-            
-            # RC Details table
-            cursor.execute('''
-                CREATE TABLE IF NOT EXISTS rc_details (
-                    id INT AUTO_INCREMENT PRIMARY KEY,
-                    rc_number VARCHAR(20) UNIQUE NOT NULL,
-                    owner_name VARCHAR(200),
-                    maker_description VARCHAR(200),
-                    maker_model VARCHAR(100),
-                    registration_date VARCHAR(20),
-                    manufacturing_date VARCHAR(20),
-                    fuel_type VARCHAR(20),
-                    color VARCHAR(50),
-                    body_type VARCHAR(50),
-                    cubic_capacity VARCHAR(20),
-                    norms_type VARCHAR(20),
-                    registered_at VARCHAR(200),
-                    vehicle_category VARCHAR(100),
-                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                    raw_data TEXT
-                )
-            ''')
-        else:
+        
+        if not self.use_mysql:
             import sqlite3
+            self.db_path = 'valuations.db'
             conn = sqlite3.connect(self.db_path)
             cursor = conn.cursor()
             
