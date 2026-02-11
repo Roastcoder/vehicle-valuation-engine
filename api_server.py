@@ -331,6 +331,14 @@ def idv_with_gemini():
                     rc_data = db.get_rc_details(rc_number)
                     raw_data = json.loads(rc_data.get('raw_data', '{}')) if rc_data else {}
                     
+                    # Get similar vehicles
+                    similar_vehicles = db.get_similar_vehicles(
+                        state=raw_data.get('registered_at', '').split(',')[-1].strip(),
+                        manufacturing_year=latest.get('manufacturing_year'),
+                        fuel_type=latest.get('fuel_type'),
+                        vehicle_model=latest.get('vehicle_model')
+                    )
+                    
                     # Return latest valuation from database
                     return jsonify({
                         'success': True,
@@ -357,7 +365,8 @@ def idv_with_gemini():
                             'confidence_score': latest.get('confidence_score'),
                             'ai_model': latest.get('ai_model'),
                             'city_used_for_price': latest.get('city')
-                        }
+                        },
+                        'similar_vehicles': similar_vehicles
                     })
         
         # Not in database, call API
@@ -391,6 +400,17 @@ def idv_with_gemini():
             )
             result['source'] = 'api'
             result['cached'] = False
+            
+            # Get similar vehicles for new API call
+            raw_data = result['rc_details'].get('raw_data', {})
+            idv_calc = result['idv_calculation']
+            similar_vehicles = db.get_similar_vehicles(
+                state=raw_data.get('registered_at', '').split(',')[-1].strip(),
+                manufacturing_year=idv_calc.get('manufacturing_year'),
+                fuel_type=raw_data.get('fuel_type'),
+                vehicle_model=idv_calc.get('vehicle_model')
+            )
+            result['similar_vehicles'] = similar_vehicles
         
         return jsonify(result)
         

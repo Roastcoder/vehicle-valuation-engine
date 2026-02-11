@@ -355,3 +355,47 @@ class ValuationDB:
         result = cursor.fetchone()
         conn.close()
         return dict(result) if result else None
+    
+    def get_similar_vehicles(self, state, manufacturing_year, fuel_type, vehicle_model, limit=5):
+        """Get similar vehicles based on state, year, fuel type, and model"""
+        if self.use_mysql:
+            conn = mysql.connector.connect(**self.db_config)
+            cursor = conn.cursor(dictionary=True)
+        else:
+            import sqlite3
+            conn = sqlite3.connect(self.db_path)
+            conn.row_factory = sqlite3.Row
+            cursor = conn.cursor()
+        
+        if self.use_mysql:
+            cursor.execute('''
+                SELECT v.rc_number, v.vehicle_model, v.manufacturing_year, 
+                       v.fuel_type, v.fair_market_retail_value, v.dealer_purchase_price,
+                       r.registered_at
+                FROM valuations v
+                LEFT JOIN rc_details r ON v.rc_number = r.rc_number
+                WHERE v.manufacturing_year = %s 
+                  AND v.fuel_type = %s
+                  AND v.vehicle_model = %s
+                  AND r.registered_at LIKE %s
+                ORDER BY v.created_at DESC
+                LIMIT %s
+            ''', (manufacturing_year, fuel_type, vehicle_model, f'%{state}%', limit))
+        else:
+            cursor.execute('''
+                SELECT v.rc_number, v.vehicle_model, v.manufacturing_year, 
+                       v.fuel_type, v.fair_market_retail_value, v.dealer_purchase_price,
+                       r.registered_at
+                FROM valuations v
+                LEFT JOIN rc_details r ON v.rc_number = r.rc_number
+                WHERE v.manufacturing_year = ? 
+                  AND v.fuel_type = ?
+                  AND v.vehicle_model = ?
+                  AND r.registered_at LIKE ?
+                ORDER BY v.created_at DESC
+                LIMIT ?
+            ''', (manufacturing_year, fuel_type, vehicle_model, f'%{state}%', limit))
+        
+        results = [dict(row) for row in cursor.fetchall()]
+        conn.close()
+        return results
