@@ -1,3 +1,4 @@
+# Python
 __pycache__/
 *.py[cod]
 *$py.class
@@ -5,13 +6,52 @@ __pycache__/
 .Python
 env/
 venv/
-.venv/
 ENV/
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Environment variables
 .env
-*.log
-.DS_Store
-*.pyc
-.idea/
+.env.local
+*.env
+
+# API Keys
+*token*
+*key*
+!requirements.txt
+
+# IDE
 .vscode/
-valuations.db
-valuations.db-journal
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Deployment
+*.pid
+*.sock
