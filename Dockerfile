@@ -12,4 +12,4 @@ EXPOSE 8080
 ENV FLASK_APP=api_server.py
 ENV PYTHONUNBUFFERED=1
 
-CMD ["python", "api_server.py"]
+CMD ["gunicorn", "--bind", "0.0.0.0:8080", "--workers", "4", "--timeout", "120", "api_server:app"]
