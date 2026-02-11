@@ -309,6 +309,10 @@ def idv_with_gemini():
         # Check database first
         history = db.get_valuation_history(rc_number)
         if history and len(history) > 0:
+            # Get RC details from database
+            rc_data = db.get_rc_details(rc_number)
+            raw_data = json.loads(rc_data.get('raw_data', '{}')) if rc_data else {}
+            
             # Return latest valuation from database
             latest = history[0]
             return jsonify({
@@ -317,7 +321,7 @@ def idv_with_gemini():
                 'cached': True,
                 'rc_details': {
                     'rc_number': rc_number,
-                    'raw_data': {}
+                    'raw_data': raw_data
                 },
                 'idv_calculation': {
                     'vehicle_make': latest.get('vehicle_make'),

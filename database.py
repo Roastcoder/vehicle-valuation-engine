@@ -329,3 +329,29 @@ class ValuationDB:
         results = [dict(row) for row in cursor.fetchall()]
         conn.close()
         return results
+    
+    def get_rc_details(self, rc_number):
+        """Get RC details for a specific RC number"""
+        if self.use_mysql:
+            conn = mysql.connector.connect(**self.db_config)
+            cursor = conn.cursor(dictionary=True)
+        else:
+            import sqlite3
+            conn = sqlite3.connect(self.db_path)
+            conn.row_factory = sqlite3.Row
+            cursor = conn.cursor()
+        
+        if self.use_mysql:
+            cursor.execute('''
+                SELECT * FROM rc_details 
+                WHERE rc_number = %s
+            ''', (rc_number,))
+        else:
+            cursor.execute('''
+                SELECT * FROM rc_details 
+                WHERE rc_number = ?
+            ''', (rc_number,))
+        
+        result = cursor.fetchone()
+        conn.close()
+        return dict(result) if result else None
