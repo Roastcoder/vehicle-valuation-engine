@@ -1,10 +1,15 @@
 import sqlite3
 from datetime import datetime
 import json
+import os
 
 class ValuationDB:
     def __init__(self, db_path='valuations.db'):
         self.db_path = db_path
+        # Auto-create directory if it doesn't exist
+        db_dir = os.path.dirname(db_path)
+        if db_dir and not os.path.exists(db_dir):
+            os.makedirs(db_dir, exist_ok=True)
         self.init_db()
     
     def init_db(self):
