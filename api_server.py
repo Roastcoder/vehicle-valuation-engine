@@ -310,38 +310,55 @@ def idv_with_gemini():
         # Check database first
         history = db.get_valuation_history(rc_number)
         if history and len(history) > 0:
-            # Get RC details from database
-            rc_data = db.get_rc_details(rc_number)
-            raw_data = json.loads(rc_data.get('raw_data', '{}')) if rc_data else {}
-            
-            # Return latest valuation from database
             latest = history[0]
-            return jsonify({
-                'success': True,
-                'source': 'database',
-                'cached': True,
-                'rc_details': {
-                    'rc_number': rc_number,
-                    'raw_data': raw_data
-                },
-                'idv_calculation': {
-                    'vehicle_make': latest.get('vehicle_make'),
-                    'vehicle_model': latest.get('vehicle_model'),
-                    'manufacturing_year': latest.get('manufacturing_year'),
-                    'vehicle_age': latest.get('vehicle_age'),
-                    'owner_count': latest.get('owner_count'),
-                    'fair_market_retail_value': latest.get('fair_market_retail_value'),
-                    'dealer_purchase_price': latest.get('dealer_purchase_price'),
-                    'current_ex_showroom': latest.get('current_ex_showroom'),
-                    'estimated_odometer': latest.get('estimated_odometer'),
-                    'base_depreciation_percent': latest.get('base_depreciation_percent'),
-                    'book_value': latest.get('book_value'),
-                    'market_listings_mean': latest.get('market_listings_mean'),
-                    'confidence_score': latest.get('confidence_score'),
-                    'ai_model': latest.get('ai_model'),
-                    'city_used_for_price': latest.get('city')
-                }
-            })
+            created_at = latest.get('created_at')
+            
+            # Check if cache is still valid (within 90 days and same year)
+            from datetime import datetime, timedelta
+            if created_at:
+                if isinstance(created_at, str):
+                    cache_date = datetime.strptime(created_at, '%Y-%m-%d %H:%M:%S')
+                else:
+                    cache_date = created_at
+                
+                now = datetime.now()
+                days_old = (now - cache_date).days
+                year_changed = now.year != cache_date.year
+                
+                # Use cache if less than 90 days old AND year hasn't changed
+                if days_old <= 90 and not year_changed:
+                    # Get RC details from database
+                    rc_data = db.get_rc_details(rc_number)
+                    raw_data = json.loads(rc_data.get('raw_data', '{}')) if rc_data else {}
+                    
+                    # Return latest valuation from database
+                    return jsonify({
+                        'success': True,
+                        'source': 'database',
+                        'cached': True,
+                        'cache_age_days': days_old,
+                        'rc_details': {
+                            'rc_number': rc_number,
+                            'raw_data': raw_data
+                        },
+                        'idv_calculation': {
+                            'vehicle_make': latest.get('vehicle_make'),
+                            'vehicle_model': latest.get('vehicle_model'),
+                            'manufacturing_year': latest.get('manufacturing_year'),
+                            'vehicle_age': latest.get('vehicle_age'),
+                            'owner_count': latest.get('owner_count'),
+                            'fair_market_retail_value': latest.get('fair_market_retail_value'),
+                            'dealer_purchase_price': latest.get('dealer_purchase_price'),
+                            'current_ex_showroom': latest.get('current_ex_showroom'),
+                            'estimated_odometer': latest.get('estimated_odometer'),
+                            'base_depreciation_percent': latest.get('base_depreciation_percent'),
+                            'book_value': latest.get('book_value'),
+                            'market_listings_mean': latest.get('market_listings_mean'),
+                            'confidence_score': latest.get('confidence_score'),
+                            'ai_model': latest.get('ai_model'),
+                            'city_used_for_price': latest.get('city')
+                        }
+                    })
         
         # Not in database, call API
         surepass_token = data.get('surepass_token', SUREPASS_API_TOKEN)
