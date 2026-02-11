@@ -31,8 +31,16 @@ class ValuationDB:
     def init_db(self):
         """Initialize database with tables"""
         if self.use_mysql:
-            conn = mysql.connector.connect(**self.db_config)
-            cursor = conn.cursor()
+            try:
+                conn = mysql.connector.connect(**self.db_config)
+                cursor = conn.cursor()
+            except Exception as e:
+                print(f"MySQL connection failed: {e}. Falling back to SQLite.")
+                self.use_mysql = False
+                import sqlite3
+                self.db_path = 'valuations.db'
+                conn = sqlite3.connect(self.db_path)
+                cursor = conn.cursor()
             
             # Valuations table
             cursor.execute('''
