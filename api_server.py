@@ -286,6 +286,7 @@ def idv_from_rc():
 def idv_with_gemini():
     """
     Calculate IDV using Gemini AI (auto-finds historical prices)
+    Check database first, if not found then call API
     
     Request Body:
     {
@@ -303,6 +304,41 @@ def idv_with_gemini():
                 'error': 'Missing required field: rc_number'
             }), 400
         
+        rc_number = data['rc_number'].upper()
+        
+        # Check database first
+        history = db.get_valuation_history(rc_number)
+        if history and len(history) > 0:
+            # Return latest valuation from database
+            latest = history[0]
+            return jsonify({
+                'success': True,
+                'source': 'database',
+                'cached': True,
+                'rc_details': {
+                    'rc_number': rc_number,
+                    'raw_data': {}
+                },
+                'idv_calculation': {
+                    'vehicle_make': latest.get('vehicle_make'),
+                    'vehicle_model': latest.get('vehicle_model'),
+                    'manufacturing_year': latest.get('manufacturing_year'),
+                    'vehicle_age': latest.get('vehicle_age'),
+                    'owner_count': latest.get('owner_count'),
+                    'fair_market_retail_value': latest.get('fair_market_retail_value'),
+                    'dealer_purchase_price': latest.get('dealer_purchase_price'),
+                    'current_ex_showroom': latest.get('current_ex_showroom'),
+                    'estimated_odometer': latest.get('estimated_odometer'),
+                    'base_depreciation_percent': latest.get('base_depreciation_percent'),
+                    'book_value': latest.get('book_value'),
+                    'market_listings_mean': latest.get('market_listings_mean'),
+                    'confidence_score': latest.get('confidence_score'),
+                    'ai_model': latest.get('ai_model'),
+                    'city_used_for_price': latest.get('city')
+                }
+            })
+        
+        # Not in database, call API
         surepass_token = data.get('surepass_token', SUREPASS_API_TOKEN)
         gemini_key = data.get('gemini_api_key', GEMINI_API_KEY)
         
@@ -319,7 +355,7 @@ def idv_with_gemini():
             }), 401
         
         result = calculate_idv_with_gemini(
-            rc_number=data['rc_number'],
+            rc_number=rc_number,
             surepass_token=surepass_token,
             gemini_api_key=gemini_key
         )
@@ -327,13 +363,51 @@ def idv_with_gemini():
         # Save to database if successful
         if result.get('success') and result.get('idv_calculation'):
             db.save_valuation(
-                rc_number=data['rc_number'],
+                rc_number=rc_number,
                 rc_details=result['rc_details'],
                 idv_calculation=result['idv_calculation']
             )
+            result['source'] = 'api'
+            result['cached'] = False
         
         return jsonify(result)
         
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+
+@app.route('/api/v1/valuations/<rc_number>', methods=['GET'])
+def get_valuation_history(rc_number):
+    """Get valuation history for RC number"""
+    try:
+        history = db.get_valuation_history(rc_number)
+        return jsonify({
+            'success': True,
+            'rc_number': rc_number,
+            'count': len(history),
+            'valuations': history
+        })
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+
+@app.route('/api/v1/valuations/recent', methods=['GET'])
+def get_recent_valuations():
+    """Get recent valuations"""
+    try:
+        limit = request.args.get('limit', 10, type=int)
+        recent = db.get_recent_valuations(limit)
+        return jsonify({
+            'success': True,
+            'count': len(recent),
+            'valuations': recent
+        })
     except Exception as e:
         return jsonify({
             'success': False,
