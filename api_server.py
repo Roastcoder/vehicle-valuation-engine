@@ -11,6 +11,22 @@ import os
 import json
 
 app = Flask(__name__)
+
+# Run database migration on startup
+try:
+    import sqlite3
+    if os.path.exists('valuations.db'):
+        conn = sqlite3.connect('valuations.db')
+        cursor = conn.cursor()
+        try:
+            cursor.execute('ALTER TABLE valuations ADD COLUMN vehicle_variant TEXT')
+            conn.commit()
+        except:
+            pass  # Column already exists
+        conn.close()
+except:
+    pass
+
 db = ValuationDB()
 
 # Load API tokens from environment variables
