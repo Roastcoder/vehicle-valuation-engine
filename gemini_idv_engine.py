@@ -353,7 +353,7 @@ DO NOT output explanation. JSON ONLY."""
                     model=self.model_name,
                     contents=prompt,
                     config=types.GenerateContentConfig(
-                        temperature=0.6,
+                        temperature=0.2,
                         tools=[types.Tool(google_search=types.GoogleSearch())]
                     )
                 )
