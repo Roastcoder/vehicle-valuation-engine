@@ -508,3 +508,174 @@ class ValuationDB:
         result = cursor.fetchone()
         conn.close()
         return dict(result) if result else None
+
+    
+    def get_segment_match(self, segment_key):
+        """
+        Get cached valuation matching segment criteria:
+        - make
+        - base_model
+        - fuel
+        - transmission
+        - manufacturing_year
+        - state
+        TTL: 90 days
+        """
+        if self.use_mysql:
+            conn = mysql.connector.connect(**self.db_config)
+            cursor = conn.cursor(dictionary=True)
+        else:
+            import sqlite3
+            conn = sqlite3.connect(self.db_path)
+            conn.row_factory = sqlite3.Row
+            cursor = conn.cursor()
+        
+        if self.use_mysql:
+            cursor.execute('''
+                SELECT *, DATEDIFF(NOW(), created_at) as cache_age_days
+                FROM valuations 
+                WHERE vehicle_make = %s 
+                  AND vehicle_model = %s 
+                  AND fuel_type = %s
+                  AND transmission = %s
+                  AND manufacturing_year = %s
+                  AND state = %s
+                  AND created_at >= DATE_SUB(NOW(), INTERVAL 45 DAY)
+                ORDER BY created_at DESC
+                LIMIT 1
+            ''', (
+                segment_key['make'],
+                segment_key['base_model'],
+                segment_key['fuel'],
+                segment_key['transmission'],
+                segment_key['manufacturing_year'],
+                segment_key['state']
+            ))
+        else:
+            cursor.execute('''
+                SELECT *, 
+                       CAST((julianday('now') - julianday(created_at)) AS INTEGER) as cache_age_days
+                FROM valuations 
+                WHERE vehicle_make = ? 
+                  AND vehicle_model = ? 
+                  AND fuel_type = ?
+                  AND transmission = ?
+                  AND manufacturing_year = ?
+                  AND state = ?
+                  AND created_at >= datetime('now', '-90 days')
+                ORDER BY created_at DESC
+                LIMIT 1
+            ''', (
+                segment_key['make'],
+                segment_key['base_model'],
+                segment_key['fuel'],
+                segment_key['transmission'],
+                segment_key['manufacturing_year'],
+                segment_key['state']
+            ))
+        
+        result = cursor.fetchone()
+        conn.close()
+        
+        if result:
+            result_dict = dict(result)
+            # Parse raw_response if it exists
+            if 'raw_response' in result_dict and result_dict['raw_response']:
+                try:
+                    result_dict.update(json.loads(result_dict['raw_response']))
+                except:
+                    pass
+            return result_dict
+        
+        return None
+    
+    def save_segment_valuation(self, segment_key, valuation_result):
+        """
+        Save valuation with segment key for future matches
+        TTL: 45 days (enforced by query, not deletion)
+        """
+        if self.use_mysql:
+            conn = mysql.connector.connect(**self.db_config)
+        else:
+            import sqlite3
+            conn = sqlite3.connect(self.db_path)
+        
+        cursor = conn.cursor()
+        
+        # Add transmission and state fields if not in schema
+        # (Already added via migration, but keep for safety)
+        if not self.use_mysql:
+            try:
+                cursor.execute('SELECT transmission FROM valuations LIMIT 1')
+            except:
+                cursor.execute('ALTER TABLE valuations ADD COLUMN transmission TEXT')
+            try:
+                cursor.execute('SELECT state FROM valuations LIMIT 1')
+            except:
+                cursor.execute('ALTER TABLE valuations ADD COLUMN state TEXT')
+        
+        if self.use_mysql:
+            cursor.execute('''
+                INSERT INTO valuations 
+                (rc_number, vehicle_make, vehicle_model, fuel_type, transmission,
+                 manufacturing_year, state, vehicle_age, owner_count, city,
+                 fair_market_retail_value, dealer_purchase_price, current_ex_showroom,
+                 estimated_odometer, base_depreciation_percent, book_value,
+                 market_listings_mean, confidence_score, ai_model, raw_response)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            ''', (
+                'SEGMENT_' + segment_key['make'][:10],
+                segment_key['make'],
+                segment_key['base_model'],
+                segment_key['fuel'],
+                segment_key['transmission'],
+                segment_key['manufacturing_year'],
+                segment_key['state'],
+                valuation_result.get('vehicle_age'),
+                valuation_result.get('owner_count', 1),
+                valuation_result.get('city_used_for_price'),
+                valuation_result.get('fair_market_retail_value'),
+                valuation_result.get('dealer_purchase_price'),
+                valuation_result.get('current_ex_showroom'),
+                valuation_result.get('estimated_odometer'),
+                valuation_result.get('base_depreciation_percent'),
+                valuation_result.get('book_value'),
+                valuation_result.get('market_listings_mean'),
+                valuation_result.get('confidence_score'),
+                valuation_result.get('ai_model'),
+                json.dumps(valuation_result)
+            ))
+        else:
+            cursor.execute('''
+                INSERT INTO valuations 
+                (rc_number, vehicle_make, vehicle_model, fuel_type,
+                 transmission, manufacturing_year, state, vehicle_age, owner_count, city,
+                 fair_market_retail_value, dealer_purchase_price, current_ex_showroom,
+                 estimated_odometer, base_depreciation_percent, book_value,
+                 market_listings_mean, confidence_score, ai_model, raw_response)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ''', (
+                'SEGMENT_' + segment_key['make'][:10],
+                segment_key['make'],
+                segment_key['base_model'],
+                segment_key['fuel'],
+                segment_key['transmission'],
+                segment_key['manufacturing_year'],
+                segment_key['state'],
+                valuation_result.get('vehicle_age'),
+                valuation_result.get('owner_count', 1),
+                valuation_result.get('city_used_for_price'),
+                valuation_result.get('fair_market_retail_value'),
+                valuation_result.get('dealer_purchase_price'),
+                valuation_result.get('current_ex_showroom'),
+                valuation_result.get('estimated_odometer'),
+                valuation_result.get('base_depreciation_percent'),
+                valuation_result.get('book_value'),
+                valuation_result.get('market_listings_mean'),
+                valuation_result.get('confidence_score'),
+                valuation_result.get('ai_model'),
+                json.dumps(valuation_result)
+            ))
+        
+        conn.commit()
+        conn.close()

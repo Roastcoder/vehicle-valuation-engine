@@ -38,39 +38,48 @@ class GeminiIDVEngine:
         # Step 1: Normalize vehicle data
         normalized_data = self._normalize_rc_data(rc_data)
         
-        # Step 2: Check database cache first
+        # Step 2: Extract segment keys for cache lookup
         from database import ValuationDB
         db = ValuationDB()
         
+        # Clean make name
         vehicle_make = normalized_data['maker_description'].replace(' INDIA LTD', '').replace(' LTD', '').replace(' INDIA', '').replace(' PVT', '').replace(' PRIVATE LIMITED', '').replace(' LIMITED', '').replace(' MOTOR', '').replace(' MOTORS', '').replace(' COMPANY', '').replace(' CO.', '').replace(' INC', '').replace(' CORPORATION', '').strip()
-        vehicle_model = normalized_data['maker_model'].split()[0]  # Base model only
-        manufacturing_year = normalized_data['manufacturing_date'][:4]
-        city = normalized_data['city']
         
-        # Check for exact match in database
-        cached = db.get_exact_match_valuation(vehicle_make, vehicle_model, manufacturing_year, city)
+        # Extract base model (first word only)
+        base_model = normalized_data['maker_model'].split()[0]
+        
+        # Extract fuel type
+        fuel_type = normalized_data['fuel_type']
+        
+        # Extract transmission (from variant or default to MANUAL)
+        transmission = 'AUTOMATIC' if 'AT' in normalized_data['maker_model'].upper() or 'AUTOMATIC' in normalized_data['maker_model'].upper() else 'MANUAL'
+        
+        # Extract year
+        manufacturing_year = normalized_data['manufacturing_date'][:4]
+        
+        # Extract state from city
+        state = self._extract_state(normalized_data['city'])
+        
+        # Step 3: Search segment match in database
+        segment_key = {
+            'make': vehicle_make,
+            'base_model': base_model,
+            'fuel': fuel_type,
+            'transmission': transmission,
+            'manufacturing_year': manufacturing_year,
+            'state': state
+        }
+        
+        cached = db.get_segment_match(segment_key)
         
         if cached:
-            print(f"✅ CACHE HIT: Found {vehicle_make} {vehicle_model} {manufacturing_year} - NO API calls")
-            # Update odometer and age based on current date
-            if rc_data and 'manufacturing_date_formatted' in rc_data:
-                try:
-                    mfg_date_str = rc_data['manufacturing_date_formatted']
-                    mfg_year, mfg_month = map(int, mfg_date_str.split('-'))
-                    current_date = datetime.now()
-                    age_years = current_date.year - mfg_year
-                    age_months = current_date.month - mfg_month
-                    if age_months < 0:
-                        age_years -= 1
-                        age_months += 12
-                    total_months = age_years * 12 + age_months
-                    cached['vehicle_age'] = f"{age_years} years {age_months} months"
-                    cached['estimated_odometer'] = total_months * 1000
-                except:
-                    pass
+            print(f"✅ SEGMENT MATCH: {vehicle_make} {base_model} {fuel_type} {transmission} {manufacturing_year} {state}")
+            print(f"   Cache age: {cached.get('cache_age_days', 0)} days (max: 45)")
+            # Return EXACT stored JSON from DB
             return cached
         
-        print(f"❌ CACHE MISS: Calling SearchAPI + Gemini for {vehicle_make} {vehicle_model} {manufacturing_year}")
+        print(f"❌ SEGMENT MISS: Calling SearchAPI + Gemini")
+        print(f"   Segment: {vehicle_make} {base_model} {fuel_type} {transmission} {manufacturing_year} {state}")
         
         # Step 3: Create structured prompt for Gemini (with SearchAPI only if not cached)
         prompt = self._create_gemini_prompt(normalized_data, use_search=True)
@@ -87,14 +96,81 @@ class GeminiIDVEngine:
         # Add model name to result
         validated_result['ai_model'] = self.model_name
         
-        # Save to database for future cache hits
+        # Save to database with segment key for future matches
         try:
-            db.save_valuation('TEMP_RC', {'raw_data': rc_data}, validated_result)
-            print(f"✅ Saved to database for future cache hits")
+            db.save_segment_valuation(segment_key, validated_result)
+            print(f"✅ Saved segment valuation for future matches (45 days TTL)")
         except Exception as e:
-            print(f"⚠️ Failed to save to database: {e}")
+            print(f"⚠️ Failed to save segment: {e}")
         
         return validated_result
+    
+    def _extract_state(self, city_string):
+        """Extract state from city string"""
+        # Common state mappings
+        state_map = {
+            'MUMBAI': 'MAHARASHTRA',
+            'BORIVALI': 'MAHARASHTRA',
+            'THANE': 'MAHARASHTRA',
+            'PUNE': 'MAHARASHTRA',
+            'DELHI': 'DELHI',
+            'BANGALORE': 'KARNATAKA',
+            'BENGALURU': 'KARNATAKA',
+            'CHENNAI': 'TAMIL NADU',
+            'HYDERABAD': 'TELANGANA',
+            'KOLKATA': 'WEST BENGAL',
+            'AHMEDABAD': 'GUJARAT',
+            'JAIPUR': 'RAJASTHAN',
+            'LUCKNOW': 'UTTAR PRADESH',
+            'CHANDIGARH': 'CHANDIGARH',
+            'KOCHI': 'KERALA',
+            'INDORE': 'MADHYA PRADESH',
+            'BHOPAL': 'MADHYA PRADESH',
+            'PATNA': 'BIHAR',
+            'GUWAHATI': 'ASSAM'
+        }
+        
+        city_upper = city_string.upper().strip()
+        
+        # Check direct mapping
+        for city_key, state in state_map.items():
+            if city_key in city_upper:
+                return state
+        
+        # Extract from comma-separated format (e.g., "MUMBAI, Maharashtra")
+        if ',' in city_string:
+            parts = city_string.split(',')
+            if len(parts) >= 2:
+                return parts[-1].strip().upper()
+        
+        # Extract from RTO code (MH = Maharashtra, DL = Delhi, etc.)
+        rto_state_map = {
+            'MH': 'MAHARASHTRA',
+            'DL': 'DELHI',
+            'KA': 'KARNATAKA',
+            'TN': 'TAMIL NADU',
+            'TS': 'TELANGANA',
+            'WB': 'WEST BENGAL',
+            'GJ': 'GUJARAT',
+            'RJ': 'RAJASTHAN',
+            'UP': 'UTTAR PRADESH',
+            'CH': 'CHANDIGARH',
+            'KL': 'KERALA',
+            'MP': 'MADHYA PRADESH',
+            'BR': 'BIHAR',
+            'AS': 'ASSAM'
+        }
+        
+        # Try to extract RTO code from city string
+        for rto_code, state in rto_state_map.items():
+            if city_upper.startswith(rto_code) or f'({rto_code})' in city_upper:
+                return state
+        
+        # Default to MAHARASHTRA for Mumbai-related RTOs
+        if 'RTO' in city_upper and 'MH' not in city_upper:
+            return 'MAHARASHTRA'
+        
+        return city_upper
     
     def _normalize_rc_data(self, rc_data):
         """Normalize RC API data for Gemini"""
