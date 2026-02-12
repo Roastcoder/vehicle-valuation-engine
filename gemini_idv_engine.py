@@ -420,6 +420,11 @@ DO NOT output explanation. JSON ONLY."""
                 idv_result['manufacturing_year'] = str(mfg_year)
                 idv_result['vehicle_age'] = f"{age_years} years {age_months} months"
                 
+                # Correct odometer calculation
+                total_months = age_years * 12 + age_months
+                correct_odometer = total_months * 1000  # 1000 km per month
+                idv_result['estimated_odometer'] = correct_odometer
+                
                 # Correct depreciation based on actual age
                 total_months = age_years * 12 + age_months
                 vehicle_type = idv_result.get('vehicle_type', '2W')
