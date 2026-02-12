@@ -47,20 +47,19 @@ class GeminiIDVEngine:
         
         if cached:
             print(f"DEBUG: Using cached valuation from database")
-            # Recalculate only odometer based on current age
-            if rc_data and 'manufacturing_date_formatted' in rc_data:
+            # Recalculate only odometer based on registration date
+            if rc_data and 'registration_date_formatted' in rc_data:
                 try:
-                    mfg_date_str = rc_data['manufacturing_date_formatted']
-                    mfg_year, mfg_month = map(int, mfg_date_str.split('-'))
+                    reg_date_str = rc_data['registration_date_formatted']
+                    reg_year, reg_month = map(int, reg_date_str.split('-'))
                     current_date = datetime.now()
-                    age_years = current_date.year - mfg_year
-                    age_months = current_date.month - mfg_month
+                    age_years = current_date.year - reg_year
+                    age_months = current_date.month - reg_month
                     if age_months < 0:
                         age_years -= 1
                         age_months += 12
                     total_months = age_years * 12 + age_months
                     cached['estimated_odometer'] = total_months * 1000
-                    cached['vehicle_age'] = f"{age_years} years {age_months} months"
                 except:
                     pass
             return cached
