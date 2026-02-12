@@ -101,6 +101,7 @@ class ValuationDB:
                     rc_number TEXT NOT NULL,
                     vehicle_make TEXT,
                     vehicle_model TEXT,
+                    vehicle_variant TEXT,
                     manufacturing_year TEXT,
                     vehicle_age TEXT,
                     fuel_type TEXT,
@@ -244,15 +245,16 @@ class ValuationDB:
             # Save valuation
             cursor.execute('''
                 INSERT INTO valuations 
-                (rc_number, vehicle_make, vehicle_model, manufacturing_year, vehicle_age,
+                (rc_number, vehicle_make, vehicle_model, vehicle_variant, manufacturing_year, vehicle_age,
                  fuel_type, owner_count, city, fair_market_retail_value, dealer_purchase_price,
                  current_ex_showroom, estimated_odometer, base_depreciation_percent, book_value,
                  market_listings_mean, confidence_score, ai_model, raw_response)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ''', (
                 rc_number,
                 idv_calculation.get('vehicle_make'),
                 idv_calculation.get('vehicle_model'),
+                idv_calculation.get('variant'),
                 idv_calculation.get('manufacturing_year'),
                 idv_calculation.get('vehicle_age'),
                 raw_data.get('fuel_type'),

@@ -366,8 +366,16 @@
                         <div class="detail-value" id="ownerName">--</div>
                     </div>
                     <div class="detail-card">
+                        <div class="detail-label">Vehicle Make</div>
+                        <div class="detail-value" id="vehicleMake">--</div>
+                    </div>
+                    <div class="detail-card">
                         <div class="detail-label">Vehicle Model</div>
-                        <div class="detail-value" id="makerModel">--</div>
+                        <div class="detail-value" id="vehicleModel">--</div>
+                    </div>
+                    <div class="detail-card">
+                        <div class="detail-label">Variant</div>
+                        <div class="detail-value" id="variant">--</div>
                     </div>
                     <div class="detail-card">
                         <div class="detail-label">Manufacturing Year</div>
@@ -468,8 +476,14 @@
                     document.getElementById('ownerName').textContent = 
                         rc.raw_data?.owner_name || 'N/A';
                     
-                    document.getElementById('makerModel').textContent = 
-                        rc.raw_data?.maker_model || idv.vehicle_model || 'N/A';
+                    document.getElementById('vehicleMake').textContent = 
+                        idv.vehicle_make || 'N/A';
+                    
+                    document.getElementById('vehicleModel').textContent = 
+                        idv.vehicle_model || 'N/A';
+                    
+                    document.getElementById('variant').textContent = 
+                        idv.variant || 'N/A';
                     
                     document.getElementById('year').textContent = 
                         idv.manufacturing_year || 'N/A';

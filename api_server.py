@@ -352,6 +352,7 @@ def idv_with_gemini():
                         'idv_calculation': {
                             'vehicle_make': latest.get('vehicle_make'),
                             'vehicle_model': latest.get('vehicle_model'),
+                            'variant': latest.get('vehicle_variant'),
                             'manufacturing_year': latest.get('manufacturing_year'),
                             'vehicle_age': latest.get('vehicle_age'),
                             'owner_count': latest.get('owner_count'),
