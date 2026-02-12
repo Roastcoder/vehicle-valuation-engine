@@ -21,7 +21,7 @@ class GeminiIDVEngine:
         
         # Initialize new google.genai client
         self.client = genai.Client(api_key=self.api_key)
-        self.model_name = 'gemini-2.5-flash'
+        self.model_name = 'gemini-2.0-flash'
         print(f"Using model: {self.model_name}")
     
     def calculate_idv_from_rc(self, rc_data):
