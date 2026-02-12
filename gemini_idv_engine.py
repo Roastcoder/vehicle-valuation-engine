@@ -343,43 +343,55 @@ OUTPUT JSON ONLY
 DO NOT output explanation. JSON ONLY."""
     
     def _call_gemini(self, prompt):
-        """Call Gemini API with proper error handling"""
-        try:
-            response = self.client.models.generate_content(
-                model=self.model_name,
-                contents=prompt,
-                config=types.GenerateContentConfig(
-                    temperature=0.2,
-                    tools=[types.Tool(google_search=types.GoogleSearch())]
+        """Call Gemini API with proper error handling and retry"""
+        max_retries = 3
+        retry_delay = 2
+        
+        for attempt in range(max_retries):
+            try:
+                response = self.client.models.generate_content(
+                    model=self.model_name,
+                    contents=prompt,
+                    config=types.GenerateContentConfig(
+                        temperature=0.6,
+                        tools=[types.Tool(google_search=types.GoogleSearch())]
+                    )
                 )
-            )
-            
-            # Check for grounding metadata
-            if hasattr(response, 'candidates') and response.candidates:
-                candidate = response.candidates[0]
-                if hasattr(candidate, 'grounding_metadata'):
-                    metadata = candidate.grounding_metadata
-                    if hasattr(metadata, 'web_search_queries'):
-                        print(f"DEBUG: Grounding active - {len(metadata.web_search_queries)} searches")
-            
-            # Extract text from response
-            if hasattr(response, 'text') and response.text:
-                print(f"DEBUG: Response text length: {len(response.text)}")
-                return response.text
-            elif hasattr(response, 'candidates') and response.candidates:
-                candidate = response.candidates[0]
-                if hasattr(candidate, 'content') and hasattr(candidate.content, 'parts'):
-                    text = ''.join([part.text for part in candidate.content.parts if hasattr(part, 'text')])
-                    if text:
-                        print(f"DEBUG: Extracted text from parts, length: {len(text)}")
-                        return text
-            
-            print(f"DEBUG: No text found in response")
-            print(f"DEBUG: Response object: {response}")
-            raise ValueError("Empty response from Gemini")
                 
-        except Exception as e:
-            raise Exception(f"Gemini API error: {str(e)}")
+                # Check for grounding metadata
+                if hasattr(response, 'candidates') and response.candidates:
+                    candidate = response.candidates[0]
+                    if hasattr(candidate, 'grounding_metadata'):
+                        metadata = candidate.grounding_metadata
+                        if hasattr(metadata, 'web_search_queries'):
+                            print(f"DEBUG: Grounding active - {len(metadata.web_search_queries)} searches")
+                
+                # Extract text from response
+                if hasattr(response, 'text') and response.text:
+                    print(f"DEBUG: Response text length: {len(response.text)}")
+                    return response.text
+                elif hasattr(response, 'candidates') and response.candidates:
+                    candidate = response.candidates[0]
+                    if hasattr(candidate, 'content') and hasattr(candidate.content, 'parts'):
+                        text = ''.join([part.text for part in candidate.content.parts if hasattr(part, 'text')])
+                        if text:
+                            print(f"DEBUG: Extracted text from parts, length: {len(text)}")
+                            return text
+                
+                print(f"DEBUG: No text found in response")
+                raise ValueError("Empty response from Gemini")
+                    
+            except Exception as e:
+                error_msg = str(e)
+                if 'Bad Gateway' in error_msg or '502' in error_msg or 'Network error' in error_msg:
+                    if attempt < max_retries - 1:
+                        print(f"DEBUG: Retry {attempt + 1}/{max_retries} after Bad Gateway error")
+                        import time
+                        time.sleep(retry_delay)
+                        continue
+                raise Exception(f"Gemini API error: {error_msg}")
+        
+        raise Exception("Gemini API error: Max retries exceeded")
     
     def _parse_gemini_response(self, response_text):
         """Parse Gemini JSON response"""
