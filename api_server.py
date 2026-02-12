@@ -299,6 +299,42 @@ def idv_from_rc():
         }), 500
 
 
+@app.route('/api/v1/rc/details', methods=['POST'])
+def get_rc_details():
+    """
+    Get RC details only (no valuation)
+    
+    Request Body:
+    {
+        "rc_number": "MH46CV4464"
+    }
+    """
+    try:
+        from rc_api_integration import RCAPIClient
+        
+        data = request.get_json()
+        
+        if 'rc_number' not in data:
+            return jsonify({'success': False, 'error': 'Missing required field: rc_number'}), 400
+        
+        rc_number = data['rc_number'].upper()
+        surepass_token = data.get('surepass_token', SUREPASS_API_TOKEN)
+        
+        if not surepass_token:
+            return jsonify({'success': False, 'error': 'Surepass API token not configured'}), 401
+        
+        rc_client = RCAPIClient(surepass_token)
+        rc_details = rc_client.fetch_vehicle_details(rc_number)
+        
+        if not rc_details:
+            return jsonify({'success': False, 'error': 'Failed to fetch RC details'}), 500
+        
+        return jsonify({'success': True, 'rc_details': rc_details})
+        
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
 @app.route('/api/v1/idv/gemini', methods=['POST'])
 def idv_with_gemini():
     """
