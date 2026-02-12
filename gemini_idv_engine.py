@@ -341,7 +341,8 @@ DO NOT output explanation. JSON ONLY."""
             response = self.model.generate_content(
                 prompt,
                 generation_config=genai.GenerationConfig(
-                    temperature=0.7,
+                    temperature=0.2,
+                    max_output_tokens=400,
                     response_mime_type="application/json"
                 )
             )
