@@ -303,7 +303,10 @@ def idv_from_rc():
 def idv_with_gemini():
     """
     Calculate IDV using Gemini AI (auto-finds historical prices)
-    Check database first, if not found then call API
+    1. Call RC API to get vehicle details
+    2. Check database for matching vehicle (make, model, variant, year)
+    3. If found: return cached valuation with recalculated odometer
+    4. If not found: call Gemini API for full valuation
     
     Request Body:
     {
@@ -312,6 +315,8 @@ def idv_with_gemini():
     """
     try:
         from gemini_idv_engine import calculate_idv_with_gemini
+        from rc_api_integration import RCAPIClient
+        from datetime import datetime
         
         data = request.get_json()
         
@@ -322,79 +327,94 @@ def idv_with_gemini():
             }), 400
         
         rc_number = data['rc_number'].upper()
-        
-        # Check database first
-        history = db.get_valuation_history(rc_number)
-        if history and len(history) > 0:
-            latest = history[0]
-            created_at = latest.get('created_at')
-            
-            # Check if cache is still valid (within 90 days and same year)
-            from datetime import datetime, timedelta
-            if created_at:
-                if isinstance(created_at, str):
-                    cache_date = datetime.strptime(created_at, '%Y-%m-%d %H:%M:%S')
-                else:
-                    cache_date = created_at
-                
-                now = datetime.now()
-                days_old = (now - cache_date).days
-                year_changed = now.year != cache_date.year
-                
-                # Use cache if less than 90 days old AND year hasn't changed
-                if days_old <= 90 and not year_changed:
-                    # Get RC details from database
-                    rc_data = db.get_rc_details(rc_number)
-                    raw_data = json.loads(rc_data.get('raw_data', '{}')) if rc_data else {}
-                    
-                    # Get similar vehicles
-                    similar_vehicles = db.get_similar_vehicles(
-                        state=raw_data.get('registered_at', '').split(',')[-1].strip(),
-                        manufacturing_year=latest.get('manufacturing_year'),
-                        fuel_type=latest.get('fuel_type'),
-                        vehicle_model=latest.get('vehicle_model')
-                    )
-                    
-                    # Return latest valuation from database
-                    return jsonify({
-                        'success': True,
-                        'source': 'database',
-                        'cached': True,
-                        'cache_age_days': days_old,
-                        'rc_details': {
-                            'rc_number': rc_number,
-                            'raw_data': raw_data
-                        },
-                        'idv_calculation': {
-                            'vehicle_make': latest.get('vehicle_make', '').replace(' INDIA LTD', '').replace(' LTD', '').replace(' INDIA', '').strip(),
-                            'vehicle_model': latest.get('vehicle_model'),
-                            'variant': latest.get('vehicle_variant'),
-                            'manufacturing_year': latest.get('manufacturing_year'),
-                            'vehicle_age': latest.get('vehicle_age'),
-                            'owner_count': latest.get('owner_count'),
-                            'fair_market_retail_value': latest.get('fair_market_retail_value'),
-                            'dealer_purchase_price': latest.get('dealer_purchase_price'),
-                            'current_ex_showroom': latest.get('current_ex_showroom'),
-                            'estimated_odometer': latest.get('estimated_odometer'),
-                            'base_depreciation_percent': latest.get('base_depreciation_percent'),
-                            'book_value': latest.get('book_value'),
-                            'market_listings_mean': latest.get('market_listings_mean'),
-                            'confidence_score': latest.get('confidence_score'),
-                            'ai_model': latest.get('ai_model'),
-                            'city_used_for_price': latest.get('city')
-                        },
-                        'similar_vehicles': similar_vehicles
-                    })
-        
-        # Not in database, call API
         surepass_token = data.get('surepass_token', SUREPASS_API_TOKEN)
-        gemini_key = data.get('gemini_api_key', GEMINI_API_KEY)
         
         if not surepass_token:
             return jsonify({
                 'success': False,
                 'error': 'Surepass API token not configured'
             }), 401
+        
+        # STEP 1: Call RC API to get vehicle details
+        rc_client = RCAPIClient(surepass_token)
+        rc_details = rc_client.fetch_vehicle_details(rc_number)
+        
+        if not rc_details:
+            return jsonify({
+                'success': False,
+                'error': 'Failed to fetch RC details'
+            }), 500
+        
+        raw_data = rc_details.get('raw_data', {})
+        vehicle_make = raw_data.get('maker_description', '').replace(' INDIA LTD', '').replace(' LTD', '').replace(' INDIA', '').strip()
+        vehicle_model = raw_data.get('maker_model', '')
+        manufacturing_year = raw_data.get('manufacturing_date_formatted', '')[:4]
+        
+        # STEP 2: Check database for matching vehicle details
+        existing = db.get_valuation_by_vehicle_details(vehicle_make, vehicle_model, '', manufacturing_year)
+        
+        if existing:
+            # STEP 3: Found in database - recalculate only odometer and age
+            try:
+                mfg_date_str = raw_data.get('manufacturing_date_formatted', '')
+                if mfg_date_str:
+                    mfg_year, mfg_month = map(int, mfg_date_str.split('-'))
+                    current_date = datetime.now()
+                    age_years = current_date.year - mfg_year
+                    age_months = current_date.month - mfg_month
+                    if age_months < 0:
+                        age_years -= 1
+                        age_months += 12
+                    
+                    total_months = age_years * 12 + age_months
+                    estimated_odometer = total_months * 1000
+                    vehicle_age = f"{age_years} years {age_months} months"
+                else:
+                    estimated_odometer = existing.get('estimated_odometer')
+                    vehicle_age = existing.get('vehicle_age')
+            except:
+                estimated_odometer = existing.get('estimated_odometer')
+                vehicle_age = existing.get('vehicle_age')
+            
+            # Get similar vehicles
+            similar_vehicles = db.get_similar_vehicles(
+                vehicle_model=vehicle_model,
+                manufacturing_year=manufacturing_year,
+                fuel_type=raw_data.get('fuel_type'),
+                state=raw_data.get('registered_at', '').split(',')[-1].strip()
+            )
+            
+            return jsonify({
+                'success': True,
+                'source': 'database',
+                'cached': True,
+                'rc_details': {
+                    'rc_number': rc_number,
+                    'raw_data': raw_data
+                },
+                'idv_calculation': {
+                    'vehicle_make': existing.get('vehicle_make'),
+                    'vehicle_model': existing.get('vehicle_model'),
+                    'variant': existing.get('vehicle_variant'),
+                    'manufacturing_year': existing.get('manufacturing_year'),
+                    'vehicle_age': vehicle_age,
+                    'owner_count': existing.get('owner_count'),
+                    'fair_market_retail_value': existing.get('fair_market_retail_value'),
+                    'dealer_purchase_price': existing.get('dealer_purchase_price'),
+                    'current_ex_showroom': existing.get('current_ex_showroom'),
+                    'estimated_odometer': estimated_odometer,
+                    'base_depreciation_percent': existing.get('base_depreciation_percent'),
+                    'book_value': existing.get('book_value'),
+                    'market_listings_mean': existing.get('market_listings_mean'),
+                    'confidence_score': existing.get('confidence_score'),
+                    'ai_model': existing.get('ai_model'),
+                    'city_used_for_price': existing.get('city')
+                },
+                'similar_vehicles': similar_vehicles
+            })
+        
+        # STEP 4: Not in database - call Gemini API for full valuation
+        gemini_key = data.get('gemini_api_key', GEMINI_API_KEY)
         
         if not gemini_key:
             return jsonify({
@@ -418,19 +438,13 @@ def idv_with_gemini():
             result['source'] = 'api'
             result['cached'] = False
             
-            # Get similar vehicles for new API call
-            raw_data = result['rc_details'].get('raw_data', {})
+            # Get similar vehicles
             idv_calc = result['idv_calculation']
-            
-            # Clean vehicle make
-            vehicle_make = idv_calc.get('vehicle_make', '').replace(' INDIA LTD', '').replace(' LTD', '').replace(' INDIA', '').strip()
-            idv_calc['vehicle_make'] = vehicle_make
-            
             similar_vehicles = db.get_similar_vehicles(
-                state=raw_data.get('registered_at', '').split(',')[-1].strip(),
+                vehicle_model=idv_calc.get('vehicle_model'),
                 manufacturing_year=idv_calc.get('manufacturing_year'),
                 fuel_type=raw_data.get('fuel_type'),
-                vehicle_model=idv_calc.get('vehicle_model')
+                state=raw_data.get('registered_at', '').split(',')[-1].strip()
             )
             result['similar_vehicles'] = similar_vehicles
         
