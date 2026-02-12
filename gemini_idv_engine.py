@@ -320,9 +320,8 @@ DO NOT output explanation. JSON ONLY."""
                 model=self.model_name,
                 contents=prompt,
                 config=types.GenerateContentConfig(
-                    temperature=0.2,
-                    max_output_tokens=4096,
-                    response_mime_type="application/json"
+                    temperature=0.1,
+                    max_output_tokens=8192
                 )
             )
             
@@ -338,10 +337,17 @@ DO NOT output explanation. JSON ONLY."""
     def _parse_gemini_response(self, response_text):
         """Parse Gemini JSON response"""
         try:
-            # Parse JSON directly
-            parsed_data = json.loads(response_text)
+            cleaned = response_text.strip()
+            if cleaned.startswith('```json'):
+                cleaned = cleaned[7:]
+            if cleaned.startswith('```'):
+                cleaned = cleaned[3:]
+            if cleaned.endswith('```'):
+                cleaned = cleaned[:-3]
+            cleaned = cleaned.strip()
             
-            # Ensure all numeric fields are properly formatted
+            parsed_data = json.loads(cleaned)
+            
             numeric_fields = [
                 'current_ex_showroom', 'estimated_odometer', 'base_depreciation_percent',
                 'book_value', 'market_listings_mean', 'fair_market_retail_value',
@@ -357,6 +363,12 @@ DO NOT output explanation. JSON ONLY."""
             
             return parsed_data
         
+        except json.JSONDecodeError as e:
+            print(f"DEBUG: JSON error at pos {e.pos}: {str(e)}")
+            print(f"DEBUG: Response length: {len(response_text)}")
+            print(f"DEBUG: First 500: {response_text[:500]}")
+            print(f"DEBUG: Last 500: {response_text[-500:]}")
+            raise Exception(f"Failed to parse Gemini response: {str(e)}")
         except Exception as e:
             raise Exception(f"Failed to parse Gemini response: {str(e)}")
     
