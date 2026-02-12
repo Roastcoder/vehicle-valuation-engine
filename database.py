@@ -419,12 +419,11 @@ class ValuationDB:
             cursor.execute('''
                 SELECT * FROM valuations 
                 WHERE vehicle_make = ? 
-                  AND vehicle_model = ? 
-                  AND vehicle_variant = ?
+                  AND (vehicle_model = ? OR vehicle_variant = ?)
                   AND manufacturing_year = ?
                 ORDER BY created_at DESC
                 LIMIT 1
-            ''', (vehicle_make, vehicle_model, variant, manufacturing_year))
+            ''', (vehicle_make, variant, variant, manufacturing_year))
         
         result = cursor.fetchone()
         conn.close()

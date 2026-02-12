@@ -386,8 +386,8 @@ def idv_with_gemini():
         vehicle_model = raw_data.get('maker_model', '')
         manufacturing_year = raw_data.get('manufacturing_date_formatted', '')[:4]
         
-        # STEP 2: Check database for matching vehicle details
-        existing = db.get_valuation_by_vehicle_details(vehicle_make, vehicle_model, '', manufacturing_year)
+        # STEP 2: Check database for matching vehicle details (make, model, year)
+        existing = db.get_valuation_by_vehicle_details(vehicle_make, vehicle_model, vehicle_model, manufacturing_year)
         
         if existing:
             # STEP 3: Found in database - recalculate only odometer and age
