@@ -35,16 +35,46 @@ class GeminiIDVEngine:
         # Step 1: Normalize vehicle data
         normalized_data = self._normalize_rc_data(rc_data)
         
-        # Step 2: Create structured prompt for Gemini
+        # Step 2: Check database cache first
+        from database import ValuationDB
+        db = ValuationDB()
+        
+        vehicle_make = normalized_data['maker_description'].replace(' INDIA LTD', '').replace(' LTD', '').replace(' INDIA', '').replace(' PVT', '').replace(' PRIVATE LIMITED', '').replace(' LIMITED', '').replace(' MOTOR', '').replace(' MOTORS', '').replace(' COMPANY', '').replace(' CO.', '').replace(' INC', '').replace(' CORPORATION', '').strip()
+        vehicle_model = normalized_data['maker_model']
+        manufacturing_year = normalized_data['manufacturing_date'][:4]
+        
+        cached = db.get_cached_valuation(vehicle_make, vehicle_model, '', manufacturing_year)
+        
+        if cached:
+            print(f"DEBUG: Using cached valuation from database")
+            # Recalculate only odometer based on current age
+            if rc_data and 'manufacturing_date_formatted' in rc_data:
+                try:
+                    mfg_date_str = rc_data['manufacturing_date_formatted']
+                    mfg_year, mfg_month = map(int, mfg_date_str.split('-'))
+                    current_date = datetime.now()
+                    age_years = current_date.year - mfg_year
+                    age_months = current_date.month - mfg_month
+                    if age_months < 0:
+                        age_years -= 1
+                        age_months += 12
+                    total_months = age_years * 12 + age_months
+                    cached['estimated_odometer'] = total_months * 1000
+                    cached['vehicle_age'] = f"{age_years} years {age_months} months"
+                except:
+                    pass
+            return cached
+        
+        # Step 3: Create structured prompt for Gemini
         prompt = self._create_gemini_prompt(normalized_data)
         
-        # Step 3: Get Gemini response
+        # Step 4: Get Gemini response
         gemini_response = self._call_gemini(prompt)
         
-        # Step 4: Parse Gemini response
+        # Step 5: Parse Gemini response
         idv_result = self._parse_gemini_response(gemini_response)
         
-        # Step 5: Backend validation (20% rule) and age correction
+        # Step 6: Backend validation (20% rule) and age correction
         validated_result = self._validate_idv(idv_result, rc_data)
         
         # Add model name to result

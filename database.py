@@ -358,7 +358,42 @@ class ValuationDB:
         conn.close()
         return dict(result) if result else None
     
-    def get_similar_vehicles(self, state, manufacturing_year, fuel_type, vehicle_model, limit=5):
+    def get_cached_valuation(self, vehicle_make, vehicle_model, variant, manufacturing_year):
+        """Get cached valuation for same vehicle (make, model, variant, year)"""
+        if self.use_mysql:
+            conn = mysql.connector.connect(**self.db_config)
+            cursor = conn.cursor(dictionary=True)
+        else:
+            import sqlite3
+            conn = sqlite3.connect(self.db_path)
+            conn.row_factory = sqlite3.Row
+            cursor = conn.cursor()
+        
+        if self.use_mysql:
+            cursor.execute('''
+                SELECT * FROM valuations 
+                WHERE vehicle_make = %s 
+                  AND vehicle_model = %s 
+                  AND manufacturing_year = %s
+                  AND created_at >= DATE_SUB(NOW(), INTERVAL 90 DAY)
+                ORDER BY created_at DESC
+                LIMIT 1
+            ''', (vehicle_make, vehicle_model, manufacturing_year))
+        else:
+            cursor.execute('''
+                SELECT * FROM valuations 
+                WHERE vehicle_make = ? 
+                  AND vehicle_model = ? 
+                  AND vehicle_variant = ?
+                  AND manufacturing_year = ?
+                  AND created_at >= datetime('now', '-90 days')
+                ORDER BY created_at DESC
+                LIMIT 1
+            ''', (vehicle_make, vehicle_model, variant, manufacturing_year))
+        
+        result = cursor.fetchone()
+        conn.close()
+        return dict(result) if result else None
         """Get similar vehicles based on state, year, fuel type, and model"""
         if self.use_mysql:
             conn = mysql.connector.connect(**self.db_config)
