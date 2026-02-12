@@ -2,6 +2,7 @@ from google import genai
 from google.genai import types
 import json
 import os
+import requests
 from datetime import datetime
 from dateutil.relativedelta import relativedelta
 
@@ -16,9 +17,11 @@ class GeminiIDVEngine:
         if not self.api_key:
             raise ValueError("GEMINI_API_KEY not configured")
         
+        self.searchapi_key = os.getenv('SEARCHAPI_KEY')
+        
         # Initialize new google.genai client
         self.client = genai.Client(api_key=self.api_key)
-        self.model_name = 'gemini-3-pro-preview'
+        self.model_name = 'gemini-2.0-flash-lite'
         print(f"Using model: {self.model_name}")
     
     def calculate_idv_from_rc(self, rc_data):
@@ -104,8 +107,36 @@ class GeminiIDVEngine:
             'vehicle_category': vehicle_category
         }
     
+    def _search_market_prices(self, vehicle_model, city, year):
+        """Search market prices using SearchAPI"""
+        if not self.searchapi_key:
+            return None
+        
+        try:
+            query = f"{vehicle_model} {city} used car price {year}"
+            response = requests.get(
+                'https://www.searchapi.io/api/v1/search',
+                params={'engine': 'google', 'q': query, 'api_key': self.searchapi_key}
+            )
+            return response.json() if response.status_code == 200 else None
+        except:
+            return None
+    
     def _create_gemini_prompt(self, data):
         """Create structured prompt for Gemini with 6-layer valuation logic"""
+        
+        # Get market data from SearchAPI
+        market_data = self._search_market_prices(
+            data['maker_model'], 
+            data['city'], 
+            data['manufacturing_date'][:4]
+        )
+        
+        market_context = ""
+        if market_data and 'organic_results' in market_data:
+            market_context = "\n\nREAL-TIME MARKET DATA:\n"
+            for result in market_data['organic_results'][:5]:
+                market_context += f"- {result.get('title', '')}: {result.get('snippet', '')}\n"
         
         return f"""You are an Indian Used Vehicle Resale Valuation Engine with 6-Layer Architecture.
 
@@ -126,6 +157,7 @@ BS Norms: {data['norms_type']}
 Manufacturing Date: {data['manufacturing_date']}
 City: {data['city']}
 Category: {data['vehicle_category']}
+{market_context}
 
 ================================
 6-LAYER VALUATION LOGIC
@@ -194,109 +226,25 @@ LAYER 6: DEALER ECONOMICS
 - Refurb cost: Hatchback ₹8k, Sedan ₹15k, Luxury ₹25k
 
 ================================
-GOOGLE SEARCH INTEGRATION
+SEARCHAPI MARKET DATA (USE THIS)
 ================================
 
-You have REAL-TIME Google Search access. Use it to:
-
-1. SEARCH CURRENT PRICES:
-   - "site:cardekho.com {data['maker_model']} {data['manufacturing_date'][:4]} price"
-   - "site:olx.in {data['maker_model']} {data['city']} used car"
-   - "site:droom.in {data['maker_model']} price {data['manufacturing_date'][:4]}"
-   - "site:spinny.com {data['maker_model']} used"
-
-2. VERIFY SPECIFICATIONS:
-   - "{data['maker_model']} ex-showroom price {data['manufacturing_date'][:4]} India"
-   - "{data['maker_model']} on-road price {data['city']} {data['manufacturing_date'][:4]}"
-
-3. MARKET RESEARCH:
-   - "{data['maker_model']} discontinued India"
-   - "{data['maker_model']} new generation launch"
-   - "{data['maker_model']} resale value {data['city']}"
-
-4. REAL-TIME DATA:
-   - Search for ACTUAL listings, not estimates
-   - Get median of 3-5 real listings
-   - Verify prices are from last 30 days
-   - Cross-check multiple sources
+You have been provided REAL market data above.
+DO NOT search Google yourself.
+Use ONLY the SearchAPI results provided in REAL-TIME MARKET DATA section.
 
 ================================
 AI LEARNING & REASONING
 ================================
 
-You have access to real-time web search and Indian automotive market knowledge.
-Use your intelligence to:
+Use the SearchAPI market data provided above to:
 
-1. PRICE DISCOVERY:
-   - Search multiple sources (CarDekho, OLX, Droom, BikeWale, Spinny)
-   - Cross-validate prices across platforms
-   - Identify outliers and filter unrealistic listings
-   - Consider seasonal trends (festive discounts, year-end sales)
-
-2. MARKET ANALYSIS:
-   - Analyze demand-supply dynamics for this model
-   - Check if model is popular/rare in the region
-   - Identify if it's a fleet vehicle (taxi/commercial)
-   - Detect accident history indicators from listing descriptions
-
-3. INTELLIGENT ADJUSTMENTS:
-   - Learn from listing patterns (quick sales = underpriced)
-   - Adjust for current fuel prices impact on diesel/petrol demand
-   - Factor in upcoming BS7 norms impact on older vehicles
-   - Consider insurance claim history if available
-
-4. REASONING:
-   - If prices vary widely, explain why in confidence score
-   - If model is rare, reduce confidence but don't fail
-   - If conflicting data, prioritize official sources
-   - Use common sense: ₹50L for 2010 Alto = error
-
-5. ADAPTIVE LEARNING:
-   - Remember: Premium brands depreciate slower
-   - EVs: Battery warranty remaining affects value significantly
-   - Diesel: Post-2015 vehicles have better resale in non-NCR
-   - Automatic transmission: +8-12% premium in metros
-
-6. MACHINE LEARNING PATTERNS:
-   - Pattern Recognition: Identify similar vehicles sold recently
-   - Time Series Analysis: Track price trends over last 6 months
-   - Anomaly Detection: Flag unusual price points (too high/low)
-   - Clustering: Group similar vehicles by age, mileage, condition
-   - Regression: Predict fair value based on historical transactions
-
-7. NEURAL NETWORK THINKING:
-   - Multi-factor correlation: How age + mileage + owner count interact
-   - Non-linear relationships: Luxury cars don't follow linear depreciation
-   - Feature importance: Which factors matter most for THIS specific model
-   - Ensemble approach: Combine multiple valuation methods, weight by confidence
-
-8. DEEP LEARNING INSIGHTS:
-   - Natural Language Processing: Analyze listing descriptions for condition clues
-   - Image recognition (if available): Assess vehicle condition from photos
-   - Sentiment analysis: Gauge market sentiment for this brand/model
-   - Transfer learning: Apply knowledge from similar models
-
-9. REINFORCEMENT LEARNING:
-   - Learn from feedback: If valuation differs from actual sale, adjust
-   - Reward accuracy: Prioritize methods that historically worked
-   - Explore-exploit: Try new approaches while using proven ones
-   - Policy optimization: Refine valuation strategy over time
-
-10. PREDICTIVE ANALYTICS:
-    - Forecast future value: Will this model appreciate/depreciate faster?
-    - Market timing: Is now good time to buy/sell this model?
-    - Risk assessment: Probability of major repairs in next 2 years
-    - Demand prediction: Will demand increase (new gen launch, fuel crisis)?
-
-11. DUAL-ENGINE VALUATION SYSTEM:
-    - ICE Engine: Use depreciation grid, mileage adjustments, regional penalties
-    - EV Engine: Use battery SoH, chemistry type, warranty cliff, replacement cost
-    - Auto-detect fuel type and route to correct engine
-    - Apply owner count penalty: +4% per additional owner
-    - NCR diesel ban logic: Scrap value if >9.5 years
-    - South India premium: +8% for KA/TS/TN/KL/AP
-    - Market convergence: Blend book value with market listings
-    - Dealer economics: Calculate purchase offer with margins and refurb costs
+1. Extract prices from snippets
+2. Calculate median of available listings
+3. Apply 6-layer valuation logic
+4. Use depreciation grid for base calculation
+5. Adjust based on regional factors
+6. Blend market data with book value
 
 ================================
 YOUR TASK
@@ -353,8 +301,7 @@ DO NOT output explanation. JSON ONLY."""
                     model=self.model_name,
                     contents=prompt,
                     config=types.GenerateContentConfig(
-                        temperature=0.2,
-                        tools=[types.Tool(google_search=types.GoogleSearch())]
+                        temperature=0.2
                     )
                 )
                 
