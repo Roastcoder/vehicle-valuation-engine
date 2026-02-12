@@ -1,4 +1,5 @@
-import google.generativeai as genai
+from google import genai
+from google.genai import types
 import json
 import os
 from datetime import datetime
@@ -15,32 +16,10 @@ class GeminiIDVEngine:
         if not self.api_key:
             raise ValueError("GEMINI_API_KEY not configured")
         
-        genai.configure(api_key=self.api_key)
-        
-        # Use Gemini 3.0 Pro Preview (latest model)
-        self.model_name = None
-        try:
-            # Try Gemini 3.0 Pro Preview first (latest and most capable)
-            self.model = genai.GenerativeModel('gemini-3-pro-preview')
-            self.model_name = 'gemini-3-pro-preview'
-            print("Using model: gemini-3-pro-preview")
-        except:
-            try:
-                # Fallback to Gemini 2.0 Flash
-                self.model = genai.GenerativeModel('gemini-2.0-flash-exp')
-                self.model_name = 'gemini-2.0-flash-exp'
-                print("Using model: gemini-2.0-flash-exp")
-            except:
-                try:
-                    # Fallback to Gemini 1.5 Pro
-                    self.model = genai.GenerativeModel('gemini-1.5-pro')
-                    self.model_name = 'gemini-1.5-pro'
-                    print("Using model: gemini-1.5-pro")
-                except:
-                    # Final fallback to Gemini Pro
-                    self.model = genai.GenerativeModel('gemini-pro')
-                    self.model_name = 'gemini-pro'
-                    print("Using model: gemini-pro")
+        # Initialize new google.genai client
+        self.client = genai.Client(api_key=self.api_key)
+        self.model_name = 'gemini-3-pro-preview'
+        print(f"Using model: {self.model_name}")
     
     def calculate_idv_from_rc(self, rc_data):
         """
@@ -337,28 +316,21 @@ DO NOT output explanation. JSON ONLY."""
     def _call_gemini(self, prompt):
         """Call Gemini API with proper error handling"""
         try:
-            # Generate content with response_mime_type for structured output
-            response = self.model.generate_content(
-                prompt,
-                generation_config=genai.GenerationConfig(
+            response = self.client.models.generate_content(
+                model=self.model_name,
+                contents=prompt,
+                config=types.GenerateContentConfig(
                     temperature=0.2,
-                    max_output_tokens=1024,
+                    max_output_tokens=4096,
                     response_mime_type="application/json"
                 )
             )
             
-            # Handle different response types
-            if hasattr(response, 'text') and response.text:
+            # Extract text from response
+            if response.text:
                 return response.text
-            elif hasattr(response, 'parts') and response.parts:
-                return response.parts[0].text
             else:
-                # Fallback: try to extract from candidates
-                if response.candidates and len(response.candidates) > 0:
-                    candidate = response.candidates[0]
-                    if candidate.content and candidate.content.parts:
-                        return candidate.content.parts[0].text
-                raise ValueError("No valid response text found")
+                raise ValueError("Empty response from Gemini")
                 
         except Exception as e:
             raise Exception(f"Gemini API error: {str(e)}")
@@ -366,15 +338,8 @@ DO NOT output explanation. JSON ONLY."""
     def _parse_gemini_response(self, response_text):
         """Parse Gemini JSON response"""
         try:
-            # Extract JSON from response
-            start = response_text.find('{')
-            end = response_text.rfind('}') + 1
-            
-            if start == -1 or end == 0:
-                raise ValueError("No JSON found in response")
-            
-            json_str = response_text[start:end]
-            parsed_data = json.loads(json_str)
+            # Parse JSON directly
+            parsed_data = json.loads(response_text)
             
             # Ensure all numeric fields are properly formatted
             numeric_fields = [
