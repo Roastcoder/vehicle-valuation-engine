@@ -325,6 +325,14 @@ DO NOT output explanation. JSON ONLY."""
                 )
             )
             
+            # Check for grounding metadata
+            if hasattr(response, 'candidates') and response.candidates:
+                candidate = response.candidates[0]
+                if hasattr(candidate, 'grounding_metadata'):
+                    metadata = candidate.grounding_metadata
+                    if hasattr(metadata, 'web_search_queries'):
+                        print(f"DEBUG: Grounding active - {len(metadata.web_search_queries)} searches")
+            
             # Extract text from response
             if response.text:
                 return response.text
@@ -383,6 +391,16 @@ DO NOT output explanation. JSON ONLY."""
             make = make.replace(' MOTOR', '').replace(' MOTORS', '').replace(' COMPANY', '')
             make = make.replace(' CO.', '').replace(' INC', '').replace(' CORPORATION', '')
             idv_result['vehicle_make'] = make.strip()
+        
+        # Separate model and variant
+        if 'vehicle_model' in idv_result and 'variant' in idv_result:
+            model = idv_result['vehicle_model']
+            variant = idv_result['variant']
+            
+            # If variant is in model, remove it
+            if variant and variant in model:
+                model = model.replace(variant, '').strip()
+                idv_result['vehicle_model'] = model
         
         # Recalculate age correctly from manufacturing_date_formatted
         if rc_data and 'manufacturing_date_formatted' in rc_data:
