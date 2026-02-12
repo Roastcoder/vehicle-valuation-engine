@@ -366,7 +366,7 @@ def idv_with_gemini():
                             'raw_data': raw_data
                         },
                         'idv_calculation': {
-                            'vehicle_make': latest.get('vehicle_make'),
+                            'vehicle_make': latest.get('vehicle_make', '').replace(' INDIA LTD', '').replace(' LTD', '').replace(' INDIA', '').strip(),
                             'vehicle_model': latest.get('vehicle_model'),
                             'variant': latest.get('vehicle_variant'),
                             'manufacturing_year': latest.get('manufacturing_year'),
@@ -421,6 +421,11 @@ def idv_with_gemini():
             # Get similar vehicles for new API call
             raw_data = result['rc_details'].get('raw_data', {})
             idv_calc = result['idv_calculation']
+            
+            # Clean vehicle make
+            vehicle_make = idv_calc.get('vehicle_make', '').replace(' INDIA LTD', '').replace(' LTD', '').replace(' INDIA', '').strip()
+            idv_calc['vehicle_make'] = vehicle_make
+            
             similar_vehicles = db.get_similar_vehicles(
                 state=raw_data.get('registered_at', '').split(',')[-1].strip(),
                 manufacturing_year=idv_calc.get('manufacturing_year'),

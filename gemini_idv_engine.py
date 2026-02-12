@@ -397,6 +397,15 @@ DO NOT output explanation. JSON ONLY."""
     def _validate_idv(self, idv_result, rc_data=None):
         """Backend validation with 20% rule and age correction"""
         
+        # Clean vehicle make - remove company suffixes
+        if 'vehicle_make' in idv_result:
+            make = idv_result['vehicle_make']
+            make = make.replace(' INDIA LTD', '').replace(' LTD', '').replace(' INDIA', '')
+            make = make.replace(' PVT', '').replace(' PRIVATE LIMITED', '').replace(' LIMITED', '')
+            make = make.replace(' MOTOR', '').replace(' MOTORS', '').replace(' COMPANY', '')
+            make = make.replace(' CO.', '').replace(' INC', '').replace(' CORPORATION', '')
+            idv_result['vehicle_make'] = make.strip()
+        
         # Recalculate age correctly from manufacturing_date_formatted
         if rc_data and 'manufacturing_date_formatted' in rc_data:
             try:
