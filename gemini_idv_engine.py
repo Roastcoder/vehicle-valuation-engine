@@ -342,7 +342,7 @@ DO NOT output explanation. JSON ONLY."""
                 prompt,
                 generation_config=genai.GenerationConfig(
                     temperature=0.2,
-                    max_output_tokens=400,
+                    max_output_tokens=1024,
                     response_mime_type="application/json"
                 )
             )
