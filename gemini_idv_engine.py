@@ -21,7 +21,7 @@ class GeminiIDVEngine:
         
         # Initialize new google.genai client
         self.client = genai.Client(api_key=self.api_key)
-        self.model_name = 'gemini-2.0-flash-lite'
+        self.model_name = 'gemini-2.5-flash'
         print(f"Using model: {self.model_name}")
     
     def calculate_idv_from_rc(self, rc_data):
@@ -43,32 +43,37 @@ class GeminiIDVEngine:
         db = ValuationDB()
         
         vehicle_make = normalized_data['maker_description'].replace(' INDIA LTD', '').replace(' LTD', '').replace(' INDIA', '').replace(' PVT', '').replace(' PRIVATE LIMITED', '').replace(' LIMITED', '').replace(' MOTOR', '').replace(' MOTORS', '').replace(' COMPANY', '').replace(' CO.', '').replace(' INC', '').replace(' CORPORATION', '').strip()
-        vehicle_model = normalized_data['maker_model']
+        vehicle_model = normalized_data['maker_model'].split()[0]  # Base model only
         manufacturing_year = normalized_data['manufacturing_date'][:4]
+        city = normalized_data['city']
         
-        cached = db.get_cached_valuation(vehicle_make, vehicle_model, '', manufacturing_year)
+        # Check for exact match in database
+        cached = db.get_exact_match_valuation(vehicle_make, vehicle_model, manufacturing_year, city)
         
         if cached:
-            print(f"DEBUG: Using cached valuation from database")
-            # Recalculate only odometer based on registration date
-            if rc_data and 'registration_date_formatted' in rc_data:
+            print(f"✅ CACHE HIT: Found {vehicle_make} {vehicle_model} {manufacturing_year} - NO API calls")
+            # Update odometer and age based on current date
+            if rc_data and 'manufacturing_date_formatted' in rc_data:
                 try:
-                    reg_date_str = rc_data['registration_date_formatted']
-                    reg_year, reg_month = map(int, reg_date_str.split('-'))
+                    mfg_date_str = rc_data['manufacturing_date_formatted']
+                    mfg_year, mfg_month = map(int, mfg_date_str.split('-'))
                     current_date = datetime.now()
-                    age_years = current_date.year - reg_year
-                    age_months = current_date.month - reg_month
+                    age_years = current_date.year - mfg_year
+                    age_months = current_date.month - mfg_month
                     if age_months < 0:
                         age_years -= 1
                         age_months += 12
                     total_months = age_years * 12 + age_months
+                    cached['vehicle_age'] = f"{age_years} years {age_months} months"
                     cached['estimated_odometer'] = total_months * 1000
                 except:
                     pass
             return cached
         
-        # Step 3: Create structured prompt for Gemini
-        prompt = self._create_gemini_prompt(normalized_data)
+        print(f"❌ CACHE MISS: Calling SearchAPI + Gemini for {vehicle_make} {vehicle_model} {manufacturing_year}")
+        
+        # Step 3: Create structured prompt for Gemini (with SearchAPI only if not cached)
+        prompt = self._create_gemini_prompt(normalized_data, use_search=True)
         
         # Step 4: Get Gemini response
         gemini_response = self._call_gemini(prompt)
@@ -81,6 +86,13 @@ class GeminiIDVEngine:
         
         # Add model name to result
         validated_result['ai_model'] = self.model_name
+        
+        # Save to database for future cache hits
+        try:
+            db.save_valuation('TEMP_RC', {'raw_data': rc_data}, validated_result)
+            print(f"✅ Saved to database for future cache hits")
+        except Exception as e:
+            print(f"⚠️ Failed to save to database: {e}")
         
         return validated_result
     
@@ -113,30 +125,48 @@ class GeminiIDVEngine:
             return None
         
         try:
+            # Extract base model name (remove variant details)
+            base_model = vehicle_model.split()[0]  # e.g., "VIRTUS GT LINE" -> "VIRTUS"
+            
+            # Try specific query first
             query = f"{vehicle_model} {city} used car price {year}"
             response = requests.get(
                 'https://www.searchapi.io/api/v1/search',
                 params={'engine': 'google', 'q': query, 'api_key': self.searchapi_key}
             )
-            return response.json() if response.status_code == 200 else None
+            
+            data = response.json() if response.status_code == 200 else None
+            
+            # If no results, try simpler query with base model
+            if data and len(data.get('organic_results', [])) < 3:
+                query = f"{base_model} {city} used car price {year}"
+                response = requests.get(
+                    'https://www.searchapi.io/api/v1/search',
+                    params={'engine': 'google', 'q': query, 'api_key': self.searchapi_key}
+                )
+                data = response.json() if response.status_code == 200 else None
+            
+            return data
         except:
             return None
     
-    def _create_gemini_prompt(self, data):
+    def _create_gemini_prompt(self, data, use_search=True):
         """Create structured prompt for Gemini with 6-layer valuation logic"""
         
-        # Get market data from SearchAPI
-        market_data = self._search_market_prices(
-            data['maker_model'], 
-            data['city'], 
-            data['manufacturing_date'][:4]
-        )
-        
+        # Get market data from SearchAPI only if use_search is True
         market_context = ""
-        if market_data and 'organic_results' in market_data:
-            market_context = "\n\nREAL-TIME MARKET DATA:\n"
-            for result in market_data['organic_results'][:5]:
-                market_context += f"- {result.get('title', '')}: {result.get('snippet', '')}\n"
+        if use_search:
+            market_data = self._search_market_prices(
+                data['maker_model'], 
+                data['city'], 
+                data['manufacturing_date'][:4]
+            )
+            
+            if market_data and 'organic_results' in market_data:
+                market_context = "\n\nREAL-TIME MARKET DATA (EXTRACT PRICES FROM THIS):\n"
+                for result in market_data['organic_results'][:5]:
+                    market_context += f"- {result.get('title', '')}: {result.get('snippet', '')}\n"
+                market_context += "\nIMPORTANT: Extract ALL prices mentioned above (₹ or Rs. or Lakh) and calculate the median as market_listings_mean.\n"
         
         return f"""You are an Indian Used Vehicle Resale Valuation Engine with 6-Layer Architecture.
 
