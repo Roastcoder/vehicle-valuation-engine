@@ -334,10 +334,20 @@ DO NOT output explanation. JSON ONLY."""
                         print(f"DEBUG: Grounding active - {len(metadata.web_search_queries)} searches")
             
             # Extract text from response
-            if response.text:
+            if hasattr(response, 'text') and response.text:
+                print(f"DEBUG: Response text length: {len(response.text)}")
                 return response.text
-            else:
-                raise ValueError("Empty response from Gemini")
+            elif hasattr(response, 'candidates') and response.candidates:
+                candidate = response.candidates[0]
+                if hasattr(candidate, 'content') and hasattr(candidate.content, 'parts'):
+                    text = ''.join([part.text for part in candidate.content.parts if hasattr(part, 'text')])
+                    if text:
+                        print(f"DEBUG: Extracted text from parts, length: {len(text)}")
+                        return text
+            
+            print(f"DEBUG: No text found in response")
+            print(f"DEBUG: Response object: {response}")
+            raise ValueError("Empty response from Gemini")
                 
         except Exception as e:
             raise Exception(f"Gemini API error: {str(e)}")
@@ -345,7 +355,13 @@ DO NOT output explanation. JSON ONLY."""
     def _parse_gemini_response(self, response_text):
         """Parse Gemini JSON response"""
         try:
+            # Check if response is empty
+            if not response_text or not response_text.strip():
+                raise ValueError("Empty response from Gemini")
+            
             cleaned = response_text.strip()
+            
+            # Remove markdown code blocks
             if cleaned.startswith('```json'):
                 cleaned = cleaned[7:]
             if cleaned.startswith('```'):
@@ -353,6 +369,12 @@ DO NOT output explanation. JSON ONLY."""
             if cleaned.endswith('```'):
                 cleaned = cleaned[:-3]
             cleaned = cleaned.strip()
+            
+            # Check if cleaned response is empty
+            if not cleaned:
+                print(f"DEBUG: Response after cleaning is empty")
+                print(f"DEBUG: Original response: {response_text}")
+                raise ValueError("No JSON content after cleaning")
             
             parsed_data = json.loads(cleaned)
             
@@ -378,6 +400,8 @@ DO NOT output explanation. JSON ONLY."""
             print(f"DEBUG: Last 500: {response_text[-500:]}")
             raise Exception(f"Failed to parse Gemini response: {str(e)}")
         except Exception as e:
+            print(f"DEBUG: Parse error: {str(e)}")
+            print(f"DEBUG: Response text: {response_text}")
             raise Exception(f"Failed to parse Gemini response: {str(e)}")
     
     def _validate_idv(self, idv_result, rc_data=None):
