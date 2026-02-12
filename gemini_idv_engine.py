@@ -321,12 +321,14 @@ DO NOT output explanation. JSON ONLY."""
                 contents=prompt,
                 config=types.GenerateContentConfig(
                     temperature=0.1,
-                    max_output_tokens=8192
+                    max_output_tokens=8192,
+                    tools=[types.Tool(google_search=types.GoogleSearch())]
                 )
             )
             
             # Extract text from response
             if response.text:
+                print(f"DEBUG: Grounding enabled, response length: {len(response.text)}")
                 return response.text
             else:
                 raise ValueError("Empty response from Gemini")
