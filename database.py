@@ -394,6 +394,8 @@ class ValuationDB:
         result = cursor.fetchone()
         conn.close()
         return dict(result) if result else None
+    
+    def get_similar_vehicles(self, vehicle_model, manufacturing_year, fuel_type, state, limit=5):
         """Get similar vehicles based on state, year, fuel type, and model"""
         if self.use_mysql:
             conn = mysql.connector.connect(**self.db_config)
