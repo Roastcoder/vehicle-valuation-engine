@@ -204,8 +204,12 @@ class GeminiIDVEngine:
             # Extract base model name (remove variant details)
             base_model = vehicle_model.split()[0]  # e.g., "VIRTUS GT LINE" -> "VIRTUS"
             
-            # Try specific query first
-            query = f"{vehicle_model} {city} used car price {year}"
+            # Extract city name (remove state/RTO suffix)
+            city_name = city.split(',')[0].strip() if ',' in city else city.strip()
+            city_name = city_name.replace(' DTO', '').replace(' RTO', '').strip()
+            
+            # Try specific query first with city
+            query = f"{vehicle_model} {city_name} used car price {year}"
             response = requests.get(
                 'https://www.searchapi.io/api/v1/search',
                 params={'engine': 'google', 'q': query, 'api_key': self.searchapi_key}
@@ -213,9 +217,9 @@ class GeminiIDVEngine:
             
             data = response.json() if response.status_code == 200 else None
             
-            # If no results, try simpler query with base model
+            # If no results, try simpler query with base model and city
             if data and len(data.get('organic_results', [])) < 3:
-                query = f"{base_model} {city} used car price {year}"
+                query = f"{base_model} {city_name} used car price {year}"
                 response = requests.get(
                     'https://www.searchapi.io/api/v1/search',
                     params={'engine': 'google', 'q': query, 'api_key': self.searchapi_key}
@@ -286,7 +290,10 @@ Apply standard depreciation based on age:
 - 5-6 years: 40%
 - 6-7 years: 45%
 - 7-8 years: 50%
-- 8+ years: 60%
+- 8-10 years: 60%
+- 10-12 years: 70%
+- 12-15 years: 80%
+- 15+ years: 85%
 
 EV-SPECIFIC IDV CALCULATION:
 For Electric Vehicles, apply formula:
@@ -322,9 +329,10 @@ LAYER 4: REGIONAL LOGIC
 - Coastal Corrosion (Mumbai/Chennai/Kolkata, Age > 5 years): -4%
 
 LAYER 5: VALUATION CONVERGENCE
-- Find market listings mean from OLX/CarDekho/Droom
-- Blend: Cars < 5 years: 70% Market / 30% Book Value
-- Blend: Cars ≥ 5 years: 50% Market / 50% Book Value
+- Find market listings mean from OLX/CarDekho/Droom for exact model + city + year
+- For vehicles < 1 year old: Use Book Value ONLY (no market blending)
+- For vehicles 1-5 years: Find market listings mean, Blend 70% Market / 30% Book Value
+- For vehicles ≥ 5 years: Blend 50% Market / 50% Book Value
 - Apply 7% negotiation gap reduction
 
 LAYER 6: DEALER ECONOMICS
@@ -571,8 +579,14 @@ DO NOT output explanation. JSON ONLY."""
                     correct_depreciation = 45
                 elif total_months <= 96:
                     correct_depreciation = 50
-                else:
+                elif total_months <= 120:
                     correct_depreciation = 60
+                elif total_months <= 144:
+                    correct_depreciation = 70
+                elif total_months <= 180:
+                    correct_depreciation = 80
+                else:
+                    correct_depreciation = 85
                 
                 # Update if Gemini got it wrong
                 if idv_result.get('base_depreciation_percent') != correct_depreciation:
@@ -584,6 +598,28 @@ DO NOT output explanation. JSON ONLY."""
         # Ensure numeric values are properly handled
         fair_market = float(idv_result.get('fair_market_retail_value', 0) or 0)
         market_listings = float(idv_result.get('market_listings_mean', 0) or 0)
+        book_value = float(idv_result.get('book_value', 0) or 0)
+        
+        # For vehicles < 1 year, override with book value if market data is unreliable
+        if rc_data and 'manufacturing_date_formatted' in rc_data:
+            try:
+                mfg_date_str = rc_data['manufacturing_date_formatted']
+                mfg_year, mfg_month = map(int, mfg_date_str.split('-'))
+                current_date = datetime.now()
+                total_months = (current_date.year - mfg_year) * 12 + (current_date.month - mfg_month)
+                
+                # For vehicles < 12 months, use book value if market data is too low
+                if total_months < 12 and book_value > 0:
+                    if market_listings == 0 or market_listings < book_value * 0.7:
+                        # Market data unreliable for new vehicles, use book value
+                        idv_result['fair_market_retail_value'] = book_value
+                        idv_result['dealer_purchase_price'] = round(book_value * 0.88, 2)  # 12% margin
+                        idv_result['validation_status'] = "Book Value (New Vehicle)"
+                        idv_result['confidence_score'] = 90
+                        idv_result['difference_percent'] = 0.0
+                        return idv_result
+            except:
+                pass
         
         if market_listings and market_listings > 0:
             difference = abs(fair_market - market_listings) / market_listings * 100

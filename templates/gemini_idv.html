@@ -326,6 +326,10 @@
                 <button type="submit" class="btn" id="submitBtn">
                     🚀 Calculate with AI Engine
                 </button>
+                
+                <button type="button" class="btn" id="hardPullBtn" style="margin-top: 15px; background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%);">
+                    🔄 Hard Pull (Skip Cache)
+                </button>
             </form>
 
             <div class="loading" id="loading">
@@ -438,19 +442,18 @@
         const result = document.getElementById('result');
         const error = document.getElementById('error');
         const submitBtn = document.getElementById('submitBtn');
-
-        form.addEventListener('submit', async (e) => {
-            e.preventDefault();
-            
-            const rcNumber = document.getElementById('rcNumber').value.toUpperCase();
-            
+        const hardPullBtn = document.getElementById('hardPullBtn');
+        
+        async function calculateIDV(rcNumber, skipCache = false) {
             loading.style.display = 'block';
             result.style.display = 'none';
             error.style.display = 'none';
             submitBtn.disabled = true;
+            hardPullBtn.disabled = true;
 
             try {
-                const response = await fetch('/api/v1/idv/gemini', {
+                const url = skipCache ? '/api/v1/idv/gemini?skip_cache=true' : '/api/v1/idv/gemini';
+                const response = await fetch(url, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ rc_number: rcNumber })
@@ -533,7 +536,24 @@
             } finally {
                 loading.style.display = 'none';
                 submitBtn.disabled = false;
+                hardPullBtn.disabled = false;
             }
+        }
+
+        form.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const rcNumber = document.getElementById('rcNumber').value.toUpperCase();
+            await calculateIDV(rcNumber, false);
+        });
+        
+        hardPullBtn.addEventListener('click', async () => {
+            const rcNumber = document.getElementById('rcNumber').value.toUpperCase();
+            if (!rcNumber) {
+                error.textContent = '❌ Please enter RC number first';
+                error.style.display = 'block';
+                return;
+            }
+            await calculateIDV(rcNumber, true);
         });
     </script>
 </body>

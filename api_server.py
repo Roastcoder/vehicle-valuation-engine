@@ -348,6 +348,9 @@ def idv_with_gemini():
     {
         "rc_number": "DL08AB1234"
     }
+    
+    Query Parameters:
+    - skip_cache=true : Force fresh calculation, skip database cache
     """
     try:
         from gemini_idv_engine import calculate_idv_with_gemini
@@ -355,6 +358,7 @@ def idv_with_gemini():
         from datetime import datetime
         
         data = request.get_json()
+        skip_cache = request.args.get('skip_cache', 'false').lower() == 'true'
         
         if 'rc_number' not in data:
             return jsonify({
@@ -386,8 +390,8 @@ def idv_with_gemini():
         vehicle_model = raw_data.get('maker_model', '')
         manufacturing_year = raw_data.get('manufacturing_date_formatted', '')[:4]
         
-        # STEP 2: Check database for matching vehicle details (make, model, year)
-        existing = db.get_valuation_by_vehicle_details(vehicle_make, vehicle_model, vehicle_model, manufacturing_year)
+        # STEP 2: Check database for matching vehicle details (make, model, year) - skip if skip_cache=true
+        existing = None if skip_cache else db.get_valuation_by_vehicle_details(vehicle_make, vehicle_model, vehicle_model, manufacturing_year)
         
         if existing:
             # STEP 3: Found in database - recalculate only odometer and age
