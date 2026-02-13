@@ -22,12 +22,13 @@ class GeminiIDVEngine:
         self.model_name = 'gemini-2.0-flash'
         print(f"Using model: {self.model_name}")
     
-    def calculate_idv_from_rc(self, rc_data):
+    def calculate_idv_from_rc(self, rc_data, skip_cache=False):
         """
         Complete IDV calculation workflow using Gemini
         
         Args:
             rc_data: Raw RC API response
+            skip_cache: Skip segment cache if True
         
         Returns:
             dict: IDV calculation result with validation
@@ -58,7 +59,7 @@ class GeminiIDVEngine:
         # Extract state from city
         state = self._extract_state(normalized_data['city'])
         
-        # Step 3: Search segment match in database
+        # Step 3: Search segment match in database (skip if skip_cache=True)
         segment_key = {
             'make': vehicle_make,
             'base_model': base_model,
@@ -68,7 +69,7 @@ class GeminiIDVEngine:
             'state': state
         }
         
-        cached = db.get_segment_match(segment_key)
+        cached = None if skip_cache else db.get_segment_match(segment_key)
         
         if cached:
             print(f"✅ SEGMENT MATCH: {vehicle_make} {base_model} {fuel_type} {transmission} {manufacturing_year} {state}")
@@ -579,7 +580,14 @@ DO NOT output explanation. JSON ONLY."""
                 
                 # Update manufacturing year to match calculated age
                 idv_result['manufacturing_year'] = str(mfg_year)
-                idv_result['vehicle_age'] = f"{age_years} years {age_months} months"
+                
+                # Format age: same year = months only, different year = years only
+                if current_year == mfg_year:
+                    idv_result['vehicle_age'] = f"{age_months} months old"
+                else:
+                    # Different year - show only years (ignore months)
+                    display_years = current_year - mfg_year
+                    idv_result['vehicle_age'] = f"{display_years} years old"
                 
                 # Correct odometer calculation
                 total_months = age_years * 12 + age_months
@@ -588,9 +596,8 @@ DO NOT output explanation. JSON ONLY."""
                 
                 # Correct depreciation based on actual age
                 total_months = age_years * 12 + age_months
-                vehicle_type = idv_result.get('vehicle_type', '2W')
                 
-                # Apply 6-layer depreciation grid
+                # Apply depreciation grid based on total months
                 if total_months <= 6:
                     correct_depreciation = 5
                 elif total_months <= 12:
@@ -618,9 +625,14 @@ DO NOT output explanation. JSON ONLY."""
                 else:
                     correct_depreciation = 85
                 
-                # Update if Gemini got it wrong
-                if idv_result.get('base_depreciation_percent') != correct_depreciation:
-                    idv_result['base_depreciation_percent'] = correct_depreciation
+                # Recalculate book value with correct depreciation
+                current_ex_showroom = float(idv_result.get('current_ex_showroom', 0) or 0)
+                if current_ex_showroom > 0:
+                    correct_book_value = current_ex_showroom * (1 - correct_depreciation / 100)
+                    idv_result['book_value'] = round(correct_book_value, 2)
+                
+                # Update depreciation
+                idv_result['base_depreciation_percent'] = correct_depreciation
                     
             except:
                 pass
@@ -674,7 +686,7 @@ DO NOT output explanation. JSON ONLY."""
         return idv_result
 
 
-def calculate_idv_with_gemini(rc_number, surepass_token, gemini_api_key=None):
+def calculate_idv_with_gemini(rc_number, surepass_token, gemini_api_key=None, skip_cache=False):
     """
     Complete workflow: RC Number → IDV Calculation
     
@@ -682,6 +694,7 @@ def calculate_idv_with_gemini(rc_number, surepass_token, gemini_api_key=None):
         rc_number: Vehicle registration number
         surepass_token: Surepass API token
         gemini_api_key: Gemini API key (optional, uses env var)
+        skip_cache: Skip segment cache if True
     
     Returns:
         dict: Complete IDV result
@@ -701,7 +714,7 @@ def calculate_idv_with_gemini(rc_number, surepass_token, gemini_api_key=None):
     # Step 2: Calculate IDV using Gemini
     try:
         gemini_engine = GeminiIDVEngine(gemini_api_key)
-        idv_result = gemini_engine.calculate_idv_from_rc(rc_details['raw_data'])
+        idv_result = gemini_engine.calculate_idv_from_rc(rc_details['raw_data'], skip_cache=skip_cache)
         
         return {
             'success': True,

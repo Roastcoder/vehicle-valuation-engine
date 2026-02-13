@@ -465,7 +465,8 @@ def idv_with_gemini():
         result = calculate_idv_with_gemini(
             rc_number=rc_number,
             surepass_token=surepass_token,
-            gemini_api_key=gemini_key
+            gemini_api_key=gemini_key,
+            skip_cache=skip_cache
         )
         
         # Save to database if successful
