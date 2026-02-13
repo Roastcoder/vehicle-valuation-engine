@@ -554,8 +554,16 @@ DO NOT output explanation. JSON ONLY."""
             model = idv_result['vehicle_model']
             variant = idv_result['variant']
             
+            # If variant is empty, extract from model
+            if not variant or variant == 'N/A':
+                # Extract variant from model (everything after first word)
+                model_parts = model.split()
+                if len(model_parts) > 1:
+                    variant = ' '.join(model_parts[1:])
+                    idv_result['variant'] = variant
+                    idv_result['vehicle_model'] = model_parts[0]
             # If variant is in model, remove it
-            if variant and variant in model:
+            elif variant and variant in model:
                 model = model.replace(variant, '').strip()
                 idv_result['vehicle_model'] = model
         
