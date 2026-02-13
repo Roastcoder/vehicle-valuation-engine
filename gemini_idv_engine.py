@@ -668,6 +668,36 @@ DO NOT output explanation. JSON ONLY."""
                         idv_result['confidence_score'] = 90
                         idv_result['difference_percent'] = 0.0
                         return idv_result
+                
+                # For all vehicles, ensure FMV doesn't exceed book value when market is lower
+                if book_value > 0 and market_listings > 0:
+                    if fair_market > book_value:
+                        # FMV should not exceed book value, recalculate
+                        idv_result['fair_market_retail_value'] = book_value
+                        idv_result['dealer_purchase_price'] = round(book_value * 0.88, 2)
+                        fair_market = book_value
+                
+                # Validate ex-showroom price against market data
+                current_ex_showroom = float(idv_result.get('current_ex_showroom', 0) or 0)
+                if current_ex_showroom > 0 and market_listings > 0:
+                    # If ex-showroom seems inflated (book value > market listings significantly)
+                    # Recalculate using market-derived ex-showroom
+                    depreciation_pct = float(idv_result.get('base_depreciation_percent', 0) or 0)
+                    if depreciation_pct > 0:
+                        # Reverse calculate ex-showroom from market listings
+                        implied_ex_showroom = market_listings / (1 - depreciation_pct / 100)
+                        
+                        # If current ex-showroom is >10% higher than implied, use implied
+                        if current_ex_showroom > implied_ex_showroom * 1.1:
+                            idv_result['current_ex_showroom'] = round(implied_ex_showroom, 2)
+                            # Recalculate book value
+                            correct_book_value = implied_ex_showroom * (1 - depreciation_pct / 100)
+                            idv_result['book_value'] = round(correct_book_value, 2)
+                            # Update FMV and dealer price
+                            idv_result['fair_market_retail_value'] = round(correct_book_value, 2)
+                            idv_result['dealer_purchase_price'] = round(correct_book_value * 0.88, 2)
+                            fair_market = correct_book_value
+                            book_value = correct_book_value
             except:
                 pass
         
