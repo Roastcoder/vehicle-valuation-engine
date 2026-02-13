@@ -17,8 +17,6 @@ class GeminiIDVEngine:
         if not self.api_key:
             raise ValueError("GEMINI_API_KEY not configured")
         
-        self.searchapi_key = os.getenv('SEARCHAPI_KEY')
-        
         # Initialize new google.genai client
         self.client = genai.Client(api_key=self.api_key)
         self.model_name = 'gemini-2.0-flash'
@@ -196,13 +194,15 @@ class GeminiIDVEngine:
         }
     
     def _search_market_prices(self, vehicle_model, city, year):
-        """Search market prices using SearchAPI"""
-        if not self.searchapi_key:
-            return None
+        """Search market prices using Serper API"""
+        serper_key = os.getenv('SERPER_API_KEY', '692b856de362602d9f79e84fce87a8ca1b40fae8')
         
         try:
+            import http.client
+            import urllib.parse
+            
             # Extract base model name (remove variant details)
-            base_model = vehicle_model.split()[0]  # e.g., "VIRTUS GT LINE" -> "VIRTUS"
+            base_model = vehicle_model.split()[0]
             
             # Extract city name (remove state/RTO suffix)
             city_name = city.split(',')[0].strip() if ',' in city else city.strip()
@@ -210,23 +210,53 @@ class GeminiIDVEngine:
             
             # Try specific query first with city
             query = f"{vehicle_model} {city_name} used car price {year}"
-            response = requests.get(
-                'https://www.searchapi.io/api/v1/search',
-                params={'engine': 'google', 'q': query, 'api_key': self.searchapi_key}
-            )
+            encoded_query = urllib.parse.quote(query)
             
-            data = response.json() if response.status_code == 200 else None
+            conn = http.client.HTTPSConnection("google.serper.dev")
+            conn.request("GET", f"/search?q={encoded_query}&apiKey={serper_key}", '', {})
+            res = conn.getresponse()
+            data = res.read()
             
-            # If no results, try simpler query with base model and city
-            if data and len(data.get('organic_results', [])) < 3:
-                query = f"{base_model} {city_name} used car price {year}"
-                response = requests.get(
-                    'https://www.searchapi.io/api/v1/search',
-                    params={'engine': 'google', 'q': query, 'api_key': self.searchapi_key}
-                )
-                data = response.json() if response.status_code == 200 else None
+            import json
+            result = json.loads(data.decode("utf-8"))
             
-            return data
+            # Convert Serper format to SearchAPI format
+            if 'organic' in result:
+                converted = {
+                    'organic_results': [
+                        {
+                            'title': item.get('title', ''),
+                            'snippet': item.get('snippet', '')
+                        }
+                        for item in result['organic'][:5]
+                    ]
+                }
+                
+                # If no results, try simpler query with base model
+                if len(converted['organic_results']) < 3:
+                    query = f"{base_model} {city_name} used car price {year}"
+                    encoded_query = urllib.parse.quote(query)
+                    
+                    conn = http.client.HTTPSConnection("google.serper.dev")
+                    conn.request("GET", f"/search?q={encoded_query}&apiKey={serper_key}", '', {})
+                    res = conn.getresponse()
+                    data = res.read()
+                    result = json.loads(data.decode("utf-8"))
+                    
+                    if 'organic' in result:
+                        converted = {
+                            'organic_results': [
+                                {
+                                    'title': item.get('title', ''),
+                                    'snippet': item.get('snippet', '')
+                                }
+                                for item in result['organic'][:5]
+                            ]
+                        }
+                
+                return converted
+            
+            return None
         except:
             return None
     
